@@ -12,14 +12,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from packages.db import Video, VideoStatus, Tenant, User
+from packages.logging import get_logger
 
-from ..deps import get_db, get_current_user, get_current_tenant
+from ..deps import get_db, get_current_user, get_current_tenant, get_video_service
+from ..services import VideoService
+from ..exceptions import ValidationException, NotFoundException
 from ..schemas import (
     VideoSummary,
     VideoDetail,
     VideoTranscript,
     PaginatedResponse,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 

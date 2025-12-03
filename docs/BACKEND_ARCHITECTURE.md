@@ -198,22 +198,22 @@ class VideoService:
 
 ### Phase 1: 分层重构
 
-- [ ] 创建 `apps/api/repositories/` 目录
-- [ ] 抽取 video_repo.py
-- [ ] 抽取 conversation_repo.py
-- [ ] 创建 `apps/api/services/` 目录
-- [ ] 重构 routers 使用 service 层
+- [x] 创建 `apps/api/repositories/` 目录
+- [x] 抽取 video_repo.py
+- [x] 抽取 conversation_repo.py
+- [x] 创建 `apps/api/services/` 目录
+- [ ] 重构 routers 使用 service 层 (进行中)
 
 ### Phase 2: 统一错误处理
 
-- [ ] 创建自定义异常类
-- [ ] 统一错误响应格式
-- [ ] 添加全局异常处理器
+- [x] 创建自定义异常类 (exceptions.py)
+- [x] 统一错误响应格式
+- [x] 添加全局异常处理器 (error_handlers.py)
 
 ### Phase 3: 依赖注入优化
 
-- [ ] 使用 FastAPI Depends
-- [ ] 创建服务工厂
+- [x] 使用 FastAPI Depends (deps.py)
+- [x] 创建服务工厂
 - [ ] 支持测试 Mock
 
 ### Phase 4: 文档完善

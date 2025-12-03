@@ -14,6 +14,7 @@ from packages.db import init_db
 from packages.logging import get_logger
 
 from .routers import videos, qa, auth, folders, knowledge, config as config_router, bilibili, conversations, system, suggestions
+from .error_handlers import register_exception_handlers
 
 logger = get_logger(__name__)
 app_config = get_config()
@@ -36,6 +37,9 @@ app = FastAPI(
     docs_url="/docs" if app_config.debug else None,
     redoc_url="/redoc" if app_config.debug else None,
 )
+
+# 注册异常处理器
+register_exception_handlers(app)
 
 # CORS配置
 import os

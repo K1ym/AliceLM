@@ -12,6 +12,15 @@ from sqlalchemy.orm import Session
 from packages.config import get_config
 from packages.db import get_db_context, Tenant, User
 
+from .repositories import (
+    VideoRepository,
+    ConversationRepository,
+    MessageRepository,
+    UserRepository,
+    TenantRepository,
+)
+from .services import VideoService, ChatService
+
 config = get_config()
 security = HTTPBearer(auto_error=False)
 
@@ -89,3 +98,43 @@ async def get_current_tenant(
             detail="租户不存在",
         )
     return tenant
+
+
+# ========== Repository 依赖注入 ==========
+
+def get_video_repo(db: Session = Depends(get_db)) -> VideoRepository:
+    """获取视频仓储"""
+    return VideoRepository(db)
+
+
+def get_conversation_repo(db: Session = Depends(get_db)) -> ConversationRepository:
+    """获取对话仓储"""
+    return ConversationRepository(db)
+
+
+def get_message_repo(db: Session = Depends(get_db)) -> MessageRepository:
+    """获取消息仓储"""
+    return MessageRepository(db)
+
+
+def get_user_repo(db: Session = Depends(get_db)) -> UserRepository:
+    """获取用户仓储"""
+    return UserRepository(db)
+
+
+# ========== Service 依赖注入 ==========
+
+def get_video_service(
+    repo: VideoRepository = Depends(get_video_repo),
+) -> VideoService:
+    """获取视频服务"""
+    return VideoService(repo)
+
+
+def get_chat_service(
+    conversation_repo: ConversationRepository = Depends(get_conversation_repo),
+    message_repo: MessageRepository = Depends(get_message_repo),
+    video_repo: VideoRepository = Depends(get_video_repo),
+) -> ChatService:
+    """获取对话服务"""
+    return ChatService(conversation_repo, message_repo, video_repo)
