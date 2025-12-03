@@ -66,9 +66,9 @@ jobs:
             mkdir -p ${{ secrets.DEPLOY_PATH }}
             cd ${{ secrets.DEPLOY_PATH }}
             
-            # 拉取代码
+            # 拉取代码（使用 GitHub 镜像加速）
             if [ ! -d ".git" ]; then
-              git clone https://github.com/K1ym/AliceLM.git .
+              git clone https://ghproxy.com/https://github.com/K1ym/AliceLM.git .
             else
               git pull
             fi
