@@ -58,9 +58,9 @@ services:
     networks:
       - alicelm
 
-  # Redis (使用华为云镜像)
+  # Redis
   redis:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/redis:7-alpine
+    image: redis:7-alpine
     volumes:
       - redis_data:/data
     restart: unless-stopped
