@@ -132,3 +132,36 @@ class VideoService:
         if video:
             return self.repo.delete(video_id)
         return False
+    
+    def get_processing_queue(self, tenant_id: int) -> dict:
+        """获取处理队列状态"""
+        processing = self.repo.get_processing_queue(tenant_id)
+        failed = self.repo.get_failed_videos(tenant_id, limit=10)
+        done = self.repo.get_recent_done(tenant_id, limit=5)
+        
+        return {
+            "processing": processing,
+            "failed": failed,
+            "done": done,
+            "counts": {
+                "processing": len(processing),
+                "failed": len(failed),
+                "done": len(done),
+            }
+        }
+    
+    def update_status(self, video_id: int, tenant_id: int, status: str) -> Optional[Video]:
+        """更新视频状态"""
+        video = self.get_video(video_id, tenant_id)
+        if video:
+            return self.repo.update_status(video_id, status)
+        return None
+    
+    def retry_failed(self, video_id: int, tenant_id: int) -> Optional[Video]:
+        """重试失败的视频"""
+        from packages.db import VideoStatus
+        
+        video = self.get_video(video_id, tenant_id)
+        if video and video.status == VideoStatus.FAILED.value:
+            return self.repo.update_status(video_id, VideoStatus.PENDING.value)
+        return None

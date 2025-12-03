@@ -188,45 +188,29 @@ async def list_videos(
     folder_id: Optional[int] = Query(None, description="收藏夹过滤"),
     search: Optional[str] = Query(None, description="标题搜索"),
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """
     获取视频列表
     
     支持分页、状态过滤、收藏夹过滤、标题搜索
     """
-    query = db.query(Video).filter(Video.tenant_id == tenant.id)
-    
-    # 状态过滤
+    # 验证状态
     if status_filter:
         try:
-            status_enum = VideoStatus(status_filter)
-            query = query.filter(Video.status == status_enum)
+            VideoStatus(status_filter)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"无效的状态: {status_filter}",
-            )
+            raise ValidationException(f"无效的状态: {status_filter}", field="status")
     
-    # 收藏夹过滤
-    if folder_id:
-        query = query.filter(Video.watched_folder_id == folder_id)
-    
-    # 标题搜索
-    if search:
-        query = query.filter(Video.title.ilike(f"%{search}%"))
-    
-    # 总数
-    total = query.count()
-    
-    # 分页
-    offset = (page - 1) * page_size
-    videos = (
-        query
-        .order_by(Video.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-        .all()
+    # 使用 Service 获取数据
+    skip = (page - 1) * page_size
+    videos, total = service.list_videos(
+        tenant_id=tenant.id,
+        skip=skip,
+        limit=page_size,
+        status=status_filter,
+        folder_id=folder_id,
+        search=search,
     )
     
     # 转换为响应格式
@@ -262,39 +246,10 @@ async def list_videos(
 @router.get("/queue/list")
 async def get_processing_queue(
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """获取处理队列"""
-    videos = (
-        db.query(Video)
-        .filter(
-            Video.tenant_id == tenant.id,
-            Video.status.in_([
-                VideoStatus.PENDING.value,
-                VideoStatus.DOWNLOADING.value,
-                VideoStatus.TRANSCRIBING.value,
-                VideoStatus.ANALYZING.value,
-            ])
-        )
-        .order_by(Video.created_at.asc())
-        .all()
-    )
-    
-    failed = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.FAILED.value)
-        .order_by(Video.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    
-    done = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.DONE.value)
-        .order_by(Video.processed_at.desc())
-        .limit(5)
-        .all()
-    )
+    queue_data = service.get_processing_queue(tenant.id)
     
     def video_to_dict(v):
         return {
@@ -312,11 +267,11 @@ async def get_processing_queue(
     queue_info = get_video_queue().get_queue_info()
     
     return {
-        "queue": [video_to_dict(v) for v in videos],
-        "failed": [video_to_dict(v) for v in failed],
-        "recent_done": [video_to_dict(v) for v in done],
-        "queue_count": len(videos),
-        "failed_count": len(failed),
+        "queue": [video_to_dict(v) for v in queue_data["processing"]],
+        "failed": [video_to_dict(v) for v in queue_data["failed"]],
+        "recent_done": [video_to_dict(v) for v in queue_data["done"]],
+        "queue_count": queue_data["counts"]["processing"],
+        "failed_count": queue_data["counts"]["failed"],
         "parallel_queue": queue_info,
     }
 
@@ -332,20 +287,13 @@ async def get_queue_info():
 async def get_video(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """获取视频详情"""
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
+    video = service.get_video(video_id, tenant.id)
     
     if not video:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="视频不存在",
-        )
+        raise NotFoundException("视频", video_id)
     
     # 解析JSON字段
     key_points = None
@@ -451,23 +399,11 @@ async def get_transcript(
 async def delete_video(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """删除视频"""
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
-    if not video:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="视频不存在",
-        )
-    
-    db.delete(video)
-    db.commit()
+    if not service.delete_video(video_id, tenant.id):
+        raise NotFoundException("视频", video_id)
     
     return {"message": "已删除", "video_id": video_id}
 

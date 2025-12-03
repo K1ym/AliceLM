@@ -83,3 +83,40 @@ class VideoRepository(BaseRepository[Video]):
             self.db.commit()
             self.db.refresh(video)
         return video
+    
+    def get_processing_queue(self, tenant_id: int) -> List[Video]:
+        """获取处理中的视频队列"""
+        return (
+            self.db.query(Video)
+            .filter(
+                Video.tenant_id == tenant_id,
+                Video.status.in_([
+                    VideoStatus.PENDING.value,
+                    VideoStatus.DOWNLOADING.value,
+                    VideoStatus.TRANSCRIBING.value,
+                    VideoStatus.ANALYZING.value,
+                ])
+            )
+            .order_by(Video.created_at.asc())
+            .all()
+        )
+    
+    def get_failed_videos(self, tenant_id: int, limit: int = 10) -> List[Video]:
+        """获取失败的视频"""
+        return (
+            self.db.query(Video)
+            .filter(Video.tenant_id == tenant_id, Video.status == VideoStatus.FAILED.value)
+            .order_by(desc(Video.created_at))
+            .limit(limit)
+            .all()
+        )
+    
+    def get_recent_done(self, tenant_id: int, limit: int = 5) -> List[Video]:
+        """获取最近完成的视频"""
+        return (
+            self.db.query(Video)
+            .filter(Video.tenant_id == tenant_id, Video.status == VideoStatus.DONE.value)
+            .order_by(desc(Video.processed_at))
+            .limit(limit)
+            .all()
+        )
