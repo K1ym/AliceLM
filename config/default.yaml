@@ -9,11 +9,9 @@ database:
   url: "sqlite:///data/bili_learner.db"
   echo: false
 
-# ASR配置 (用户自行配置)
+# ASR配置 (仅支持API模式)
 asr:
-  provider: "faster_whisper"  # API模式: groq_whisper / openai_whisper | 本地模式: faster_whisper
-  model_size: "medium"        # 本地模式: tiny / base / small / medium / large
-  device: "auto"              # 本地模式: auto / cpu / cuda / mps
+  provider: "groq_whisper"    # groq_whisper (推荐,免费) / openai_whisper
   # api_key: 通过环境变量 ALICE_ASR__API_KEY 设置
   # api_model: whisper-large-v3-turbo (Groq) / whisper-1 (OpenAI)
 

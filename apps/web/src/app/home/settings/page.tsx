@@ -208,44 +208,25 @@ function FoldersSection({
   );
 }
 
-// ASR提供商配置
-const ASR_PROVIDERS = {
-  local: [
-    { id: "faster_whisper", name: "Faster-Whisper", description: "本地运行，4x加速版Whisper，推荐" },
-    { id: "whisper_local", name: "Whisper Local", description: "OpenAI Whisper本地版" },
-  ],
-  api: [
-    { id: "openai_whisper", name: "OpenAI Whisper API", base_url: "https://api.openai.com/v1", models: ["whisper-1"] },
-    { id: "groq_whisper", name: "Groq Whisper", base_url: "https://api.groq.com/openai/v1", models: ["whisper-large-v3", "whisper-large-v3-turbo"] },
-    { id: "deepgram", name: "Deepgram", base_url: "https://api.deepgram.com/v1", models: ["nova-2", "nova-2-general"] },
-  ],
-};
-
-const LOCAL_MODEL_SIZES = [
-  { id: "tiny", name: "Tiny", desc: "最快，精度低" },
-  { id: "base", name: "Base", desc: "" },
-  { id: "small", name: "Small", desc: "" },
-  { id: "medium", name: "Medium", desc: "推荐" },
-  { id: "large", name: "Large", desc: "精度高" },
-  { id: "large-v3", name: "Large-v3", desc: "最新版本" },
+// ASR提供商配置 (仅API模式)
+const ASR_PROVIDERS = [
+  { id: "groq_whisper", name: "Groq Whisper (推荐,免费)", base_url: "https://api.groq.com/openai/v1", models: ["whisper-large-v3", "whisper-large-v3-turbo"] },
+  { id: "openai_whisper", name: "OpenAI Whisper API", base_url: "https://api.openai.com/v1", models: ["whisper-1"] },
 ];
 
 function ASRSection({ config }: { config: ConfigResponse | null }) {
-  const [provider, setProvider] = useState(config?.asr?.provider || "faster_whisper");
-  const [modelSize, setModelSize] = useState(config?.asr?.model_size || "medium");
+  const [provider, setProvider] = useState(config?.asr?.provider || "groq_whisper");
   const [apiBaseUrl, setApiBaseUrl] = useState(config?.asr?.api_base_url || "");
   const [apiKey, setApiKey] = useState("");
   const [apiModel, setApiModel] = useState(config?.asr?.api_model || "");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const isLocalMode = ASR_PROVIDERS.local.some(p => p.id === provider);
-  const currentApiProvider = ASR_PROVIDERS.api.find(p => p.id === provider);
+  const currentProvider = ASR_PROVIDERS.find(p => p.id === provider);
 
   useEffect(() => {
     if (config?.asr) {
-      setProvider(config.asr.provider);
-      setModelSize(config.asr.model_size);
+      setProvider(config.asr.provider || "groq_whisper");
       setApiBaseUrl(config.asr.api_base_url || "");
       setApiModel(config.asr.api_model || "");
     }
@@ -253,10 +234,10 @@ function ASRSection({ config }: { config: ConfigResponse | null }) {
 
   function handleProviderChange(newProvider: string) {
     setProvider(newProvider);
-    const apiProvider = ASR_PROVIDERS.api.find(p => p.id === newProvider);
-    if (apiProvider) {
-      setApiBaseUrl(apiProvider.base_url);
-      setApiModel(apiProvider.models[0] || "");
+    const newProviderConfig = ASR_PROVIDERS.find(p => p.id === newProvider);
+    if (newProviderConfig) {
+      setApiBaseUrl(newProviderConfig.base_url);
+      setApiModel(newProviderConfig.models[0] || "");
     }
   }
 
@@ -266,11 +247,9 @@ function ASRSection({ config }: { config: ConfigResponse | null }) {
     try {
       await configApi.updateASR({
         provider,
-        model_size: modelSize,
-        device: "auto",
-        api_base_url: isLocalMode ? undefined : apiBaseUrl,
-        api_key: isLocalMode ? undefined : (apiKey || undefined),
-        api_model: isLocalMode ? undefined : apiModel,
+        api_base_url: apiBaseUrl,
+        api_key: apiKey || undefined,
+        api_model: apiModel,
       });
       setMessage({ type: "success", text: "ASR配置已保存" });
       setApiKey("");
@@ -296,82 +275,45 @@ function ASRSection({ config }: { config: ConfigResponse | null }) {
             onChange={(e) => handleProviderChange(e.target.value)}
             className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
           >
-            <optgroup label="本地模式">
-              {ASR_PROVIDERS.local.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </optgroup>
-            <optgroup label="API模式">
-              {ASR_PROVIDERS.api.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </optgroup>
+            {ASR_PROVIDERS.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
           </select>
         </div>
 
-        {isLocalMode ? (
-          <div className="p-4 bg-white border border-neutral-100 rounded-xl">
-            <label className="block text-sm font-medium text-neutral-900 mb-2">
-              模型大小
-            </label>
-            <select
-              value={modelSize}
-              onChange={(e) => setModelSize(e.target.value)}
-              className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
-            >
-              {LOCAL_MODEL_SIZES.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} {s.desc && `(${s.desc})`}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <>
-            <div className="p-4 bg-white border border-neutral-100 rounded-xl">
-              <label className="block text-sm font-medium text-neutral-900 mb-2">
-                API Base URL
-              </label>
-              <input
-                type="text"
-                value={apiBaseUrl}
-                onChange={(e) => setApiBaseUrl(e.target.value)}
-                className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
-              />
-            </div>
+        <div className="p-4 bg-white border border-neutral-100 rounded-xl">
+          <label className="block text-sm font-medium text-neutral-900 mb-2">
+            模型
+          </label>
+          <select
+            value={apiModel}
+            onChange={(e) => setApiModel(e.target.value)}
+            className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
+          >
+            {currentProvider?.models.map((m: string) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
 
-            <div className="p-4 bg-white border border-neutral-100 rounded-xl">
-              <label className="block text-sm font-medium text-neutral-900 mb-2">
-                模型
-              </label>
-              <select
-                value={apiModel}
-                onChange={(e) => setApiModel(e.target.value)}
-                className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
-              >
-                {currentApiProvider?.models.map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="p-4 bg-white border border-neutral-100 rounded-xl">
-              <label className="block text-sm font-medium text-neutral-900 mb-2">
-                API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={config?.asr?.has_api_key ? "已配置 (留空保持不变)" : "输入API Key"}
-                className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
-              />
-              {config?.asr?.has_api_key && (
-                <p className="text-xs text-green-600 mt-1">API Key 已配置</p>
-              )}
-            </div>
-          </>
-        )}
+        <div className="p-4 bg-white border border-neutral-100 rounded-xl">
+          <label className="block text-sm font-medium text-neutral-900 mb-2">
+            API Key
+          </label>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={config?.asr?.has_api_key ? "已配置 (留空保持不变)" : "输入API Key"}
+            className="w-full px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-neutral-400"
+          />
+          <p className="text-xs text-neutral-500 mt-2">
+            Groq: <a href="https://console.groq.com/keys" target="_blank" className="text-blue-500 hover:underline">获取免费 API Key</a>
+          </p>
+          {config?.asr?.has_api_key && (
+            <p className="text-xs text-green-600 mt-1">API Key 已配置</p>
+          )}
+        </div>
 
         {message && (
           <p className={`text-sm ${message.type === "success" ? "text-green-600" : "text-red-500"}`}>

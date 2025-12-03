@@ -161,8 +161,6 @@ export interface StreamEvent {
 
 export interface ASRConfig {
   provider: string
-  model_size: string
-  device: string
   api_base_url?: string
   api_key?: string
   api_model?: string
@@ -178,8 +176,6 @@ export interface LLMConfig {
 
 export interface ASRConfigResponse {
   provider: string
-  model_size: string
-  device: string
   api_base_url?: string
   has_api_key: boolean
   api_model?: string

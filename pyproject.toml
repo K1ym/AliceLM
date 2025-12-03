@@ -37,9 +37,7 @@ dependencies = [
     "moviepy>=1.0.3",
     "pydub>=0.25.1",
     
-    # ASR
-    "openai-whisper>=20231117",
-    "faster-whisper>=0.9.0",
+    # ASR (API only, no local models)
     
     # AI/LLM
     "openai>=1.3.0",

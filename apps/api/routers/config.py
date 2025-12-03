@@ -23,12 +23,8 @@ logger = get_logger(__name__)
 # ========== Schemas ==========
 
 class ASRConfig(BaseModel):
-    """ASR配置"""
-    provider: str = Field(default="faster_whisper", description="ASR提供商")
-    # 本地模型配置
-    model_size: str = Field(default="medium", description="本地模型大小")
-    device: str = Field(default="auto", description="设备")
-    # 外接API配置
+    """ASR配置 (仅支持API模式)"""
+    provider: str = Field(default="groq_whisper", description="ASR提供商: groq_whisper / openai_whisper")
     api_base_url: Optional[str] = Field(default=None, description="API地址")
     api_key: Optional[str] = Field(default=None, description="API密钥")
     api_model: Optional[str] = Field(default=None, description="API模型名")
@@ -85,8 +81,6 @@ class NotifyConfig(BaseModel):
 class ASRConfigResponse(BaseModel):
     """ASR配置响应"""
     provider: str
-    model_size: str
-    device: str
     api_base_url: Optional[str] = None
     has_api_key: bool = False
     api_model: Optional[str] = None
