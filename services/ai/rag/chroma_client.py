@@ -35,12 +35,13 @@ class ChromaConfig:
 class ChromaClient:
     """ChromaDB 客户端 - 与 RAGFlowClient 接口兼容"""
 
-    def __init__(self, config: Optional[ChromaConfig] = None):
+    def __init__(self, config: Optional[ChromaConfig] = None, user_id: int = None):
         """
         初始化 ChromaDB 客户端
         
         Args:
             config: ChromaDB 配置
+            user_id: 用户ID (用于读取用户配置的 embedding 端点)
         """
         import chromadb
         from chromadb.config import Settings
@@ -51,6 +52,7 @@ class ChromaClient:
             config = ChromaConfig(persist_directory=persist_dir)
         
         self.config = config
+        self.user_id = user_id
         
         # 确保目录存在
         os.makedirs(config.persist_directory, exist_ok=True)
@@ -61,37 +63,70 @@ class ChromaClient:
             settings=Settings(anonymized_telemetry=False)
         )
         
-        # OpenAI embedding function
+        # embedding function (延迟初始化)
         self._embedding_fn = None
         
-        logger.info("chromadb_initialized", persist_dir=config.persist_directory)
+        logger.info("chromadb_initialized", persist_dir=config.persist_directory, user_id=user_id)
 
     def _get_embedding_function(self):
-        """获取 embedding 函数"""
+        """
+        获取 embedding 函数
+        
+        优先级:
+        1. 用户配置的 embedding 端点 (前端任务模型配置)
+        2. 全局 LLM API key
+        3. 本地默认模型 (all-MiniLM-L6-v2)
+        """
         if self._embedding_fn is None:
             from chromadb.utils import embedding_functions
             
-            app_config = get_config()
-            api_key = app_config.llm.api_key
+            api_key = None
+            base_url = None
+            model_name = self.config.embedding_model
             
-            if api_key:
-                # 有 API key 时使用 OpenAI embedding
+            # 1. 尝试从用户配置获取 embedding 端点
+            if self.user_id:
+                try:
+                    from apps.api.services.config_service import ConfigService
+                    from apps.api.repositories.config_repo import ConfigRepository
+                    from packages.db import get_db
+                    
+                    db = next(get_db())
+                    config_repo = ConfigRepository(db)
+                    config_service = ConfigService(config_repo)
+                    
+                    embedding_config = config_service.get_task_llm_config(self.user_id, "embedding")
+                    if embedding_config.get("api_key"):
+                        api_key = embedding_config["api_key"]
+                        base_url = embedding_config.get("base_url")
+                        model_name = embedding_config.get("model") or model_name
+                        logger.info("embedding_config_source", source="user_config", model=model_name)
+                except Exception as e:
+                    logger.warning("user_embedding_config_failed", error=str(e))
+            
+            # 2. 回退到全局配置
+            if not api_key:
+                app_config = get_config()
+                api_key = app_config.llm.api_key
                 base_url = getattr(app_config.llm, 'base_url', None)
+            
+            # 3. 创建 embedding 函数
+            if api_key:
                 try:
                     self._embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
                         api_key=api_key,
                         api_base=base_url,
-                        model_name=self.config.embedding_model,
+                        model_name=model_name,
                     )
-                    logger.info("embedding_function", type="openai")
+                    logger.info("embedding_function", type="api", model=model_name)
                 except Exception as e:
-                    logger.warning("openai_embedding_failed", error=str(e))
+                    logger.warning("api_embedding_failed", error=str(e))
                     self._embedding_fn = embedding_functions.DefaultEmbeddingFunction()
-                    logger.info("embedding_function", type="default")
+                    logger.info("embedding_function", type="default_fallback")
             else:
                 # 无 API key 时使用默认 embedding (本地)
                 self._embedding_fn = embedding_functions.DefaultEmbeddingFunction()
-                logger.info("embedding_function", type="default")
+                logger.info("embedding_function", type="default_local")
         
         return self._embedding_fn
 

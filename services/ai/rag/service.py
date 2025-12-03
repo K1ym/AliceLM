@@ -29,9 +29,12 @@ class RAGClient(Protocol):
     def ask(self, dataset_id: str, question: str, conversation_id: Optional[str] = None) -> Dict[str, Any]: ...
 
 
-def get_rag_client() -> RAGClient:
+def get_rag_client(user_id: int = None) -> RAGClient:
     """
     根据配置获取 RAG 客户端
+    
+    Args:
+        user_id: 用户ID (用于读取用户配置的 embedding 端点)
     
     配置项: rag.provider = "chroma" | "ragflow"
     """
@@ -44,8 +47,8 @@ def get_rag_client() -> RAGClient:
         return RAGFlowClient()
     else:
         from .chroma_client import ChromaClient
-        logger.info("rag_provider", provider="chroma")
-        return ChromaClient()
+        logger.info("rag_provider", provider="chroma", user_id=user_id)
+        return ChromaClient(user_id=user_id)
 
 
 # 为了兼容性，从 chroma_client 导入 SearchResult
