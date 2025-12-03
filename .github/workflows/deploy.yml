@@ -62,7 +62,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /opt/alicelm
+            # 创建目录（如果不存在）
+            mkdir -p ${{ secrets.DEPLOY_PATH }}
+            cd ${{ secrets.DEPLOY_PATH }}
             
             # 拉取代码
             if [ ! -d ".git" ]; then
