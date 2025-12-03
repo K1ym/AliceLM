@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # 前端 Web
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - alicelm
+
+  # 后端 API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - ALICE_DEBUG=false
+      - ALICE_DB__URL=sqlite:///data/alicelm.db
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - alicelm
+
+  # 后台 Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - ALICE_DEBUG=false
+      - ALICE_DB__URL=sqlite:///data/alicelm.db
+    command: python -m services.worker
+    depends_on:
+      - redis
+      - api
+    restart: unless-stopped
+    networks:
+      - alicelm
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - alicelm
+
+networks:
+  alicelm:
+    driver: bridge
+
+volumes:
+  redis_data:

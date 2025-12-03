@@ -1,0 +1,60 @@
+# AliceLM 默认配置
+# 敏感信息请使用环境变量覆盖
+
+app_name: "AliceLM"
+debug: false
+
+# 数据库配置
+database:
+  url: "sqlite:///data/bili_learner.db"
+  echo: false
+
+# ASR配置 (用户自行配置)
+asr:
+  provider: "faster_whisper"  # API模式: groq_whisper / openai_whisper | 本地模式: faster_whisper
+  model_size: "medium"        # 本地模式: tiny / base / small / medium / large
+  device: "auto"              # 本地模式: auto / cpu / cuda / mps
+  # api_key: 通过环境变量 ALICE_ASR__API_KEY 设置
+  # api_model: whisper-large-v3-turbo (Groq) / whisper-1 (OpenAI)
+
+# LLM配置 (支持所有OpenAI兼容API)
+llm:
+  provider: "openai"          # openai (兼容所有OpenAI格式API)
+  model: "gpt-4o-mini"        # 模型名称
+  # base_url: 通过环境变量 ALICE_LLM__BASE_URL 设置
+  # api_key: 通过环境变量 ALICE_LLM__API_KEY 设置
+  #
+  # 常用配置示例:
+  # ─────────────────────────────────────────────
+  # OpenAI:
+  #   base_url: https://api.openai.com/v1
+  #   model: gpt-4o-mini / gpt-4o / gpt-3.5-turbo
+  #
+  # DeepSeek:
+  #   base_url: https://api.deepseek.com/v1
+  #   model: deepseek-chat / deepseek-reasoner
+  #
+  # 硅基流动 SiliconFlow:
+  #   base_url: https://api.siliconflow.cn/v1
+  #   model: Qwen/Qwen2.5-7B-Instruct
+  #
+  # Ollama (本地):
+  #   base_url: http://localhost:11434/v1
+  #   model: qwen2.5 / llama3.2 / deepseek-r1
+  #   api_key: ollama (任意值)
+
+# RAG配置
+rag:
+  provider: "ragflow"
+  base_url: "http://localhost:9380"
+  # api_key: 通过环境变量 ALICE_RAG__API_KEY 设置
+
+# 微信通知配置
+wechat:
+  enabled: false
+  # webhook_url: 通过环境变量 ALICE_WECHAT__WEBHOOK_URL 设置
+
+# B站配置
+bilibili:
+  poll_interval: 300  # 轮询间隔（秒）
+  # sessdata: 通过环境变量 ALICE_BILI_SESSDATA 设置

@@ -1,0 +1,1668 @@
+# 🏗️ Bili-Learner 技术设计文档
+
+---
+
+## 1. 设计原则
+
+### 1.1 核心原则
+
+| 原则 | 说明 | 实践 |
+|------|------|------|
+| **模块化** | 功能解耦，独立演进 | 插件式ASR/LLM/Notifier |
+| **可扩展** | 面向接口，易于扩展 | Provider抽象层 |
+| **多租户** | 支持多用户隔离 | Tenant-aware数据模型 |
+| **数据分层** | 结构化+向量化分离 | SQL + VectorDB |
+| **配置驱动** | 行为可配置，无需改代码 | YAML/ENV配置 |
+
+### 1.2 扩展性设计
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Plugin Architecture                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │  Source Plugins │  │   ASR Plugins   │  │   LLM Plugins   │ │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤ │
+│  │ • Bilibili      │  │ • Whisper       │  │ • OpenAI        │ │
+│  │ • YouTube       │  │ • Faster-Whisper│  │ • Claude        │ │
+│  │ • Podcast       │  │ • 讯飞          │  │ • Ollama(本地)  │ │
+│  │ • Local File    │  │ • 阿里          │  │ • DeepSeek      │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+│           │                   │                   │             │
+│           ▼                   ▼                   ▼             │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              Core Engine (Provider Interface)               ││
+│  └─────────────────────────────────────────────────────────────┘│
+│           │                   │                   │             │
+│           ▼                   ▼                   ▼             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
+│  │ Notify Plugins  │  │  Store Plugins  │  │ Export Plugins  │ │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤ │
+│  │ • 企业微信      │  │ • SQLite        │  │ • Markdown      │ │
+│  │ • Telegram      │  │ • PostgreSQL    │  │ • Notion        │ │
+│  │ • 邮件          │  │ • MySQL         │  │ • Obsidian      │ │
+│  │ • Webhook       │  │ • MongoDB       │  │ • Anki          │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. 系统架构
+
+### 2.1 整体架构（多租户）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Clients                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
+│  │ 微信Bot  │  │  Web UI  │  │   MCP    │  │  CLI     │        │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
+└───────┼─────────────┼─────────────┼─────────────┼───────────────┘
+        │             │             │             │
+        ▼             ▼             ▼             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     API Gateway + Auth                          │
+│                   (FastAPI + JWT/OAuth)                         │
+├─────────────────────────────────────────────────────────────────┤
+│  • 认证/授权    • 租户识别    • 限流    • 日志                   │
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Service Layer                                │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐       │
+│  │  Watcher  │ │ Processor │ │ AI Agent  │ │  Notifier │       │
+│  │  Service  │ │  Service  │ │  Service  │ │  Service  │       │
+│  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘       │
+│        │             │             │             │              │
+│        ▼             ▼             ▼             ▼              │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              Provider Layer (Pluggable)                     ││
+│  ├─────────────────────────────────────────────────────────────┤│
+│  │  SourceProvider │ ASRProvider │ LLMProvider │ NotifyProvider││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Task Queue Layer                             │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │           Redis / APScheduler (Per-Tenant Queue)            ││
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐    ││
+│  │  │download│ │  asr   │ │analyze │ │ embed  │ │ notify │    ││
+│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘    ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Data Layer                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                  Relational DB (Per-Tenant)                 ││
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐    ││
+│  │  │ users  │ │ videos │ │  tags  │ │configs │ │ logs   │    ││
+│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘    ││
+│  │          SQLite (单机) / PostgreSQL (生产)                   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                  Vector DB (Per-Tenant)                     ││
+│  │  ┌────────────────┐  ┌────────────────┐                     ││
+│  │  │  embeddings    │  │   indexes      │                     ││
+│  │  │  (chunks)      │  │  (HNSW/IVF)    │                     ││
+│  │  └────────────────┘  └────────────────┘                     ││
+│  │          ChromaDB (单机) / Qdrant/Milvus (生产)              ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                  File Storage (Per-Tenant)                  ││
+│  │  ┌────────┐ ┌────────┐ ┌────────┐                           ││
+│  │  │ videos │ │ audios │ │transcripts│                        ││
+│  │  └────────┘ └────────┘ └────────┘                           ││
+│  │          Local (单机) / S3/OSS (生产)                        ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 目录结构
+
+```
+bili-learner/
+├── apps/
+│   ├── api/                    # FastAPI后端
+│   │   ├── main.py
+│   │   ├── routers/
+│   │   │   ├── videos.py
+│   │   │   ├── chat.py
+│   │   │   ├── wechat.py
+│   │   │   └── stats.py
+│   │   └── dependencies.py
+│   │
+│   └── web/                    # Next.js前端
+│       ├── app/
+│       │   ├── page.tsx        # Dashboard
+│       │   ├── library/
+│       │   ├── graph/
+│       │   └── settings/
+│       └── components/
+│
+├── services/
+│   ├── watcher/                # 收藏夹监控服务
+│   │   ├── __init__.py
+│   │   ├── scanner.py          # 扫描逻辑
+│   │   └── scheduler.py        # 定时调度
+│   │
+│   ├── processor/              # 视频处理管道
+│   │   ├── __init__.py
+│   │   ├── downloader.py       # 下载模块
+│   │   ├── transcriber.py      # 转写模块（ASR调度）
+│   │   └── pipeline.py         # 管道编排
+│   │
+│   ├── asr/                    # ASR模型适配层
+│   │   ├── __init__.py
+│   │   ├── base.py             # 抽象基类
+│   │   ├── whisper_local.py    # 本地Whisper
+│   │   ├── faster_whisper.py   # Faster-Whisper
+│   │   ├── xunfei.py           # 讯飞ASR
+│   │   ├── aliyun.py           # 阿里Paraformer
+│   │   └── openai_whisper.py   # OpenAI Whisper API
+│   │
+│   ├── ai/                     # AI服务
+│   │   ├── __init__.py
+│   │   ├── summarizer.py       # 摘要生成
+│   │   ├── tagger.py           # 标签分类
+│   │   ├── qa.py               # 问答服务
+│   │   └── embedder.py         # 向量化
+│   │
+│   ├── mcp/                    # MCP Server
+│   │   ├── __init__.py
+│   │   ├── server.py           # MCP服务主入口
+│   │   ├── tools.py            # MCP工具定义
+│   │   └── resources.py        # MCP资源定义
+│   │
+│   └── notifier/               # 通知服务
+│       ├── __init__.py
+│       ├── wechat.py           # 微信推送
+│       └── templates.py        # 消息模板
+│
+├── packages/
+│   ├── db/                     # 数据库模块
+│   │   ├── models.py           # SQLAlchemy模型
+│   │   ├── crud.py             # CRUD操作
+│   │   └── migrations/
+│   │
+│   ├── queue/                  # 任务队列
+│   │   ├── tasks.py
+│   │   └── worker.py
+│   │
+│   └── config/                 # 配置管理
+│       ├── settings.py
+│       └── .env.example
+│
+├── scripts/
+│   ├── scan_favlist.py         # 现有扫描脚本
+│   └── migrate.py              # 数据迁移
+│
+├── data/                       # 数据目录（gitignore）
+│   ├── videos/                 # 下载的视频
+│   ├── audio/                  # 提取的音频
+│   ├── transcripts/            # 转写文本
+│   └── db.sqlite               # SQLite数据库
+│
+├── docs/
+│   ├── PRD.md
+│   └── DESIGN.md
+│
+├── docker-compose.yml
+├── pyproject.toml
+└── README.md
+```
+
+---
+
+## 3. 数据模型
+
+### 3.1 数据库架构概览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Relational DB (SQLite/PostgreSQL)            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐     │
+│  │   Tenant    │──┬──►│    User     │      │   Config    │     │
+│  │  (租户表)   │  │   │  (用户表)   │      │  (配置表)   │     │
+│  └─────────────┘  │   └─────────────┘      └─────────────┘     │
+│                   │                                             │
+│                   │   ┌─────────────┐      ┌─────────────┐     │
+│                   ├──►│   Video     │◄────►│    Tag      │     │
+│                   │   │  (视频表)   │      │  (标签表)   │     │
+│                   │   └──────┬──────┘      └─────────────┘     │
+│                   │          │                                  │
+│                   │          ▼                                  │
+│                   │   ┌─────────────┐      ┌─────────────┐     │
+│                   └──►│WatchedFolder│      │LearningRecord│    │
+│                       │ (监控收藏夹)│      │ (学习记录)  │     │
+│                       └─────────────┘      └─────────────┘     │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    Vector DB (ChromaDB/Qdrant)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Collection: {tenant_id}_video_chunks                           │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  id | video_id | chunk_idx | content | embedding | metadata ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+│  Collection: {tenant_id}_concepts                               │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  id | name | description | embedding | related_videos       ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 多租户与用户模型
+
+```python
+# packages/db/models/tenant.py
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+
+class TenantPlan(enum.Enum):
+    FREE = "free"           # 免费版
+    PRO = "pro"             # 专业版
+    TEAM = "team"           # 团队版
+    ENTERPRISE = "enterprise"  # 企业版
+
+class Tenant(Base):
+    """租户/组织"""
+    __tablename__ = "tenants"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100))
+    slug = Column(String(50), unique=True, index=True)  # 唯一标识符
+    
+    # 订阅计划
+    plan = Column(Enum(TenantPlan), default=TenantPlan.FREE)
+    plan_expires_at = Column(DateTime, nullable=True)
+    
+    # 配额限制
+    max_videos = Column(Integer, default=100)         # 最大视频数
+    max_storage_gb = Column(Integer, default=10)      # 最大存储GB
+    max_users = Column(Integer, default=1)            # 最大用户数
+    
+    # 状态
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 关系
+    users = relationship("User", back_populates="tenant")
+    videos = relationship("Video", back_populates="tenant")
+    configs = relationship("TenantConfig", back_populates="tenant")
+
+
+class UserRole(enum.Enum):
+    OWNER = "owner"         # 所有者
+    ADMIN = "admin"         # 管理员
+    MEMBER = "member"       # 成员
+    VIEWER = "viewer"       # 只读
+
+class User(Base):
+    """用户"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
+    
+    # 基本信息
+    email = Column(String(255), unique=True, index=True)
+    username = Column(String(50))
+    password_hash = Column(String(255), nullable=True)  # 可选，支持OAuth
+    
+    # 第三方绑定
+    wechat_openid = Column(String(100), nullable=True, index=True)
+    bilibili_uid = Column(String(50), nullable=True)
+    bilibili_sessdata = Column(Text, nullable=True)  # 加密存储
+    
+    # 角色与权限
+    role = Column(Enum(UserRole), default=UserRole.MEMBER)
+    
+    # 状态
+    is_active = Column(Boolean, default=True)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 关系
+    tenant = relationship("Tenant", back_populates="users")
+    learning_records = relationship("LearningRecord", back_populates="user")
+
+
+class TenantConfig(Base):
+    """租户配置"""
+    __tablename__ = "tenant_configs"
+    
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
+    
+    key = Column(String(100))   # 配置键
+    value = Column(Text)        # 配置值 (JSON)
+    
+    # 配置类型
+    # asr_provider, asr_config, llm_provider, llm_config,
+    # notify_channels, watched_folders, etc.
+    
+    tenant = relationship("Tenant", back_populates="configs")
+    
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'key', name='uq_tenant_config'),
+    )
+```
+
+### 3.3 核心业务模型（租户隔离）
+
+```python
+# packages/db/models/video.py
+
+class VideoStatus(enum.Enum):
+    PENDING = "pending"           # 待处理
+    DOWNLOADING = "downloading"   # 下载中
+    TRANSCRIBING = "transcribing" # 转写中
+    ANALYZING = "analyzing"       # AI分析中
+    DONE = "done"                 # 完成
+    FAILED = "failed"             # 失败
+
+class Video(Base):
+    __tablename__ = "videos"
+    
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)  # 租户隔离
+    
+    # 视频信息
+    bvid = Column(String(20), index=True)
+    title = Column(String(500))
+    author = Column(String(100))
+    duration = Column(Integer)  # 秒
+    cover_url = Column(String(500))
+    source_url = Column(String(500))
+    source_type = Column(String(20), default="bilibili")  # bilibili/youtube/local
+    
+    # 处理状态
+    status = Column(Enum(VideoStatus), default=VideoStatus.PENDING)
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0)
+    
+    # 文件路径（相对于租户目录）
+    video_path = Column(String(500), nullable=True)
+    audio_path = Column(String(500), nullable=True)
+    transcript_path = Column(String(500), nullable=True)
+    
+    # AI生成内容
+    summary = Column(Text, nullable=True)
+    key_points = Column(Text, nullable=True)        # JSON
+    concepts = Column(Text, nullable=True)          # JSON
+    
+    # 处理配置（覆盖租户默认）
+    asr_provider = Column(String(50), nullable=True)
+    llm_provider = Column(String(50), nullable=True)
+    
+    # 时间戳
+    collected_at = Column(DateTime)
+    processed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    
+    # 关系
+    tenant = relationship("Tenant", back_populates="videos")
+    tags = relationship("VideoTag", back_populates="video")
+    
+    # 复合唯一约束：同一租户下bvid唯一
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'bvid', name='uq_tenant_video'),
+        Index('ix_tenant_status', 'tenant_id', 'status'),
+    )
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True)
+    category = Column(String(50))  # 领域分类
+    
+    videos = relationship("VideoTag", back_populates="tag")
+
+
+class VideoTag(Base):
+    __tablename__ = "video_tags"
+    
+    video_id = Column(Integer, ForeignKey("videos.id"), primary_key=True)
+    tag_id = Column(Integer, ForeignKey("tags.id"), primary_key=True)
+    confidence = Column(Float, default=1.0)  # AI标签置信度
+    
+    video = relationship("Video", back_populates="tags")
+    tag = relationship("Tag", back_populates="videos")
+
+
+class WatchedFolder(Base):
+    """监控的收藏夹"""
+    __tablename__ = "watched_folders"
+    
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)  # 租户隔离
+    
+    folder_id = Column(String(50))
+    folder_type = Column(String(20))  # favlist / season / subscription
+    name = Column(String(200))
+    platform = Column(String(20), default="bilibili")  # bilibili / youtube
+    
+    last_scan_at = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'folder_id', name='uq_tenant_folder'),
+    )
+
+
+class LearningRecord(Base):
+    """学习记录"""
+    __tablename__ = "learning_records"
+    
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"))
+    
+    action = Column(String(20))  # viewed / asked / reviewed / exported
+    duration = Column(Integer, nullable=True)  # 学习时长（秒）
+    created_at = Column(DateTime, default=datetime.utcnow)
+    metadata = Column(Text, nullable=True)  # JSON额外数据
+    
+    user = relationship("User", back_populates="learning_records")
+```
+
+### 3.4 RAG设计（基于RAGFlow）
+
+#### 为什么选择RAGFlow
+| 特性 | RAGFlow | 自建方案 |
+|------|---------|----------|
+| 文档解析 | ✅ 内置多格式解析 | 需自己实现 |
+| 智能分块 | ✅ 语义分块 | 需调参 |
+| 多种检索 | ✅ 混合检索(向量+关键词) | 需组合 |
+| 知识库管理 | ✅ 完整UI | 需自建 |
+| 多租户 | ✅ 原生支持 | 需实现 |
+| 部署 | ✅ Docker一键部署 | 复杂 |
+
+#### 架构集成
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Bili-Learner                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
+│  │  Processor  │────►│  RAGFlow    │◄────│  AI Agent   │       │
+│  │  (转写文本)  │     │  (知识库)   │     │  (问答)     │       │
+│  └─────────────┘     └──────┬──────┘     └─────────────┘       │
+│                             │                                   │
+│                             ▼                                   │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                    RAGFlow Server                           ││
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        ││
+│  │  │ Dataset │  │ Chunking│  │Embedding│  │ Retrieval│        ││
+│  │  │ (租户)  │  │ (分块)  │  │ (向量化)│  │ (检索)   │        ││
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘        ││
+│  │                         │                                   ││
+│  │                         ▼                                   ││
+│  │  ┌─────────────────────────────────────────────────────────┐││
+│  │  │  Elasticsearch + Minio + MySQL (RAGFlow内置)            │││
+│  │  └─────────────────────────────────────────────────────────┘││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### RAGFlow客户端封装
+
+```python
+# packages/rag/ragflow_client.py
+
+import httpx
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class RAGFlowConfig:
+    base_url: str = "http://localhost:9380"
+    api_key: str = ""
+
+@dataclass
+class SearchResult:
+    chunk_id: str
+    content: str
+    score: float
+    metadata: dict
+    source_video_id: int
+
+class RAGFlowClient:
+    """RAGFlow API客户端"""
+    
+    def __init__(self, config: RAGFlowConfig):
+        self.config = config
+        self.client = httpx.AsyncClient(
+            base_url=config.base_url,
+            headers={"Authorization": f"Bearer {config.api_key}"}
+        )
+    
+    # ========== 数据集(Dataset)管理 ==========
+    
+    async def create_dataset(self, tenant_id: str, name: str) -> str:
+        """为租户创建知识库"""
+        resp = await self.client.post("/api/v1/dataset", json={
+            "name": f"tenant_{tenant_id}_{name}",
+            "description": f"Bili-Learner知识库 - 租户{tenant_id}",
+            "embedding_model": "BAAI/bge-large-zh-v1.5",
+            "chunk_method": "naive",  # 或 "qa", "manual"
+            "parser_config": {
+                "chunk_token_count": 512,
+                "layout_recognize": False,  # 纯文本无需布局识别
+            }
+        })
+        return resp.json()["data"]["id"]
+    
+    async def get_or_create_dataset(self, tenant_id: str) -> str:
+        """获取或创建租户知识库"""
+        dataset_name = f"tenant_{tenant_id}_videos"
+        
+        # 查询是否存在
+        resp = await self.client.get("/api/v1/dataset", params={
+            "name": dataset_name
+        })
+        datasets = resp.json().get("data", [])
+        
+        if datasets:
+            return datasets[0]["id"]
+        
+        return await self.create_dataset(tenant_id, "videos")
+    
+    # ========== 文档管理 ==========
+    
+    async def upload_transcript(
+        self, 
+        tenant_id: str,
+        video_id: int,
+        title: str,
+        transcript: str,
+        metadata: dict
+    ) -> str:
+        """上传视频转写文本到知识库"""
+        dataset_id = await self.get_or_create_dataset(tenant_id)
+        
+        # 构建文档内容（带元数据）
+        document_content = f"""# {title}
+
+## 视频信息
+- 视频ID: {video_id}
+- 作者: {metadata.get('author', '')}
+- 时长: {metadata.get('duration', 0)}秒
+
+## 转写内容
+{transcript}
+"""
+        
+        # 上传文档
+        resp = await self.client.post(
+            f"/api/v1/dataset/{dataset_id}/document",
+            files={"file": (f"video_{video_id}.txt", document_content, "text/plain")},
+            data={
+                "parser_id": "naive",  # 使用朴素分块
+                "run": "1"  # 立即解析
+            }
+        )
+        return resp.json()["data"]["id"]
+    
+    async def delete_document(self, tenant_id: str, video_id: int):
+        """删除视频对应的文档"""
+        dataset_id = await self.get_or_create_dataset(tenant_id)
+        
+        # 查找文档
+        resp = await self.client.get(
+            f"/api/v1/dataset/{dataset_id}/document",
+            params={"keywords": f"video_{video_id}"}
+        )
+        docs = resp.json().get("data", [])
+        
+        for doc in docs:
+            await self.client.delete(
+                f"/api/v1/dataset/{dataset_id}/document/{doc['id']}"
+            )
+    
+    # ========== 检索与问答 ==========
+    
+    async def search(
+        self,
+        tenant_id: str,
+        query: str,
+        top_k: int = 5,
+        similarity_threshold: float = 0.2
+    ) -> List[SearchResult]:
+        """语义检索"""
+        dataset_id = await self.get_or_create_dataset(tenant_id)
+        
+        resp = await self.client.post(
+            f"/api/v1/dataset/{dataset_id}/retrieval",
+            json={
+                "question": query,
+                "top_k": top_k,
+                "similarity_threshold": similarity_threshold,
+                "rerank_model": "BAAI/bge-reranker-v2-m3",  # 可选重排
+            }
+        )
+        
+        results = []
+        for chunk in resp.json().get("data", {}).get("chunks", []):
+            # 从chunk内容中提取video_id
+            video_id = self._extract_video_id(chunk.get("content", ""))
+            results.append(SearchResult(
+                chunk_id=chunk["id"],
+                content=chunk["content"],
+                score=chunk["similarity"],
+                metadata=chunk.get("metadata", {}),
+                source_video_id=video_id
+            ))
+        
+        return results
+    
+    async def chat(
+        self,
+        tenant_id: str,
+        question: str,
+        conversation_id: Optional[str] = None
+    ) -> dict:
+        """RAG对话（使用RAGFlow内置对话能力）"""
+        dataset_id = await self.get_or_create_dataset(tenant_id)
+        
+        # 创建或获取对话
+        if not conversation_id:
+            resp = await self.client.post("/api/v1/conversation", json={
+                "dataset_ids": [dataset_id],
+                "llm_model": "gpt-4o-mini",  # 可配置
+                "prompt": self._get_system_prompt()
+            })
+            conversation_id = resp.json()["data"]["id"]
+        
+        # 发送消息
+        resp = await self.client.post(
+            f"/api/v1/conversation/{conversation_id}/message",
+            json={"content": question}
+        )
+        
+        return {
+            "conversation_id": conversation_id,
+            "answer": resp.json()["data"]["content"],
+            "references": resp.json()["data"].get("references", [])
+        }
+    
+    def _get_system_prompt(self) -> str:
+        return """你是一个学习助手，基于用户收藏的视频内容回答问题。
+        
+规则：
+1. 只基于提供的视频内容回答，不要编造
+2. 引用具体视频来源
+3. 如果内容中没有相关信息，明确告知用户
+4. 用简洁清晰的语言回答"""
+    
+    def _extract_video_id(self, content: str) -> int:
+        """从内容中提取video_id"""
+        import re
+        match = re.search(r'视频ID:\s*(\d+)', content)
+        return int(match.group(1)) if match else 0
+```
+
+#### RAGFlow部署配置
+
+```yaml
+# docker-compose.ragflow.yml
+version: '3.8'
+
+services:
+  ragflow:
+    image: infiniflow/ragflow:latest
+    container_name: ragflow
+    ports:
+      - "9380:9380"  # API
+      - "9443:443"   # Web UI
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=ragflow
+      - MYSQL_DB=ragflow
+      - MINIO_HOST=minio:9000
+      - ES_HOST=elasticsearch:9200
+    volumes:
+      - ./data/ragflow:/ragflow/data
+    depends_on:
+      - mysql
+      - elasticsearch
+      - minio
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ragflow
+      MYSQL_DATABASE: ragflow
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    volumes:
+      - ./data/es:/usr/share/elasticsearch/data
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - ./data/minio:/data
+```
+
+#### 配置示例
+
+```yaml
+# config/rag.yaml
+rag:
+  provider: "ragflow"  # ragflow / chroma (fallback)
+  
+  ragflow:
+    base_url: "http://localhost:9380"
+    api_key: "${RAGFLOW_API_KEY}"
+    
+    # 分块配置
+    chunk_method: "naive"
+    chunk_token_count: 512
+    
+    # Embedding模型
+    embedding_model: "BAAI/bge-large-zh-v1.5"
+    
+    # 重排模型（可选）
+    rerank_model: "BAAI/bge-reranker-v2-m3"
+    
+    # 检索配置
+    default_top_k: 5
+    similarity_threshold: 0.2
+  
+  # 降级方案
+  fallback:
+    provider: "chroma"
+    persist_directory: "./data/chroma"
+```
+
+### 3.5 数据隔离策略
+
+| 层级 | 隔离方式 | 说明 |
+|------|----------|------|
+| **关系数据库** | tenant_id字段 | 所有业务表包含tenant_id，查询时自动过滤 |
+| **RAGFlow** | 独立Dataset | 每租户独立知识库：`tenant_{id}_videos` |
+| **文件存储** | 目录隔离 | `data/{tenant_id}/videos/`, `data/{tenant_id}/audio/` |
+| **缓存** | Key前缀 | Redis key格式：`{tenant_id}:{key}` |
+| **任务队列** | 队列分组 | 可按租户优先级调度 |
+
+```python
+# packages/db/tenant_context.py
+
+from contextvars import ContextVar
+from sqlalchemy.orm import Query
+
+# 当前租户上下文
+current_tenant: ContextVar[int] = ContextVar('current_tenant')
+
+class TenantQuery(Query):
+    """自动添加租户过滤的Query"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def _add_tenant_filter(self):
+        tenant_id = current_tenant.get(None)
+        if tenant_id and hasattr(self._entity_zero().entity, 'tenant_id'):
+            return self.filter_by(tenant_id=tenant_id)
+        return self
+
+# 中间件自动设置租户上下文
+async def tenant_middleware(request, call_next):
+    tenant_id = get_tenant_from_request(request)  # 从JWT/header获取
+    token = current_tenant.set(tenant_id)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        current_tenant.reset(token)
+```
+
+### 3.6 ER图
+
+```
+┌─────────────────┐       ┌─────────────────┐
+│     Video       │       │      Tag        │
+├─────────────────┤       ├─────────────────┤
+│ id              │       │ id              │
+│ bvid            │       │ name            │
+│ title           │       │ category        │
+│ status          │       └────────┬────────┘
+│ summary         │                │
+│ key_points      │                │
+│ ...             │                │
+└────────┬────────┘       ┌────────┴────────┐
+         │                │    VideoTag     │
+         │                ├─────────────────┤
+         ├────────────────│ video_id        │
+         │                │ tag_id          │
+         │                │ confidence      │
+         │                └─────────────────┘
+         │
+         │        ┌─────────────────────┐
+         ├────────│  TranscriptChunk    │
+         │        ├─────────────────────┤
+         │        │ id                  │
+         │        │ video_id            │
+         │        │ content             │
+         │        │ embedding           │
+         │        └─────────────────────┘
+         │
+         │        ┌─────────────────────┐
+         └────────│   LearningRecord    │
+                  ├─────────────────────┤
+                  │ id                  │
+                  │ video_id            │
+                  │ action              │
+                  └─────────────────────┘
+```
+
+---
+
+## 3. 核心模块设计
+
+### 3.1 Watcher（监控服务）
+
+```python
+# services/watcher/scanner.py
+
+class FolderScanner:
+    """收藏夹扫描器"""
+    
+    def __init__(self, db: Session, queue: TaskQueue):
+        self.db = db
+        self.queue = queue
+    
+    async def scan_all_folders(self):
+        """扫描所有监控的收藏夹"""
+        folders = self.db.query(WatchedFolder).filter(
+            WatchedFolder.is_active == True
+        ).all()
+        
+        for folder in folders:
+            await self.scan_folder(folder)
+    
+    async def scan_folder(self, folder: WatchedFolder):
+        """扫描单个收藏夹，检测新视频"""
+        # 获取收藏夹视频列表
+        videos = await fetch_favlist(folder.folder_id)
+        
+        for video in videos:
+            # 检查是否已存在
+            exists = self.db.query(Video).filter(
+                Video.bvid == video["bvid"]
+            ).first()
+            
+            if not exists:
+                # 创建新记录
+                new_video = Video(
+                    bvid=video["bvid"],
+                    title=video["title"],
+                    author=video["upper"],
+                    duration=video["duration"],
+                    status=VideoStatus.PENDING,
+                    collected_at=datetime.utcnow()
+                )
+                self.db.add(new_video)
+                self.db.commit()
+                
+                # 加入处理队列
+                await self.queue.enqueue("process_video", {
+                    "video_id": new_video.id,
+                    "bvid": new_video.bvid
+                })
+        
+        # 更新扫描时间
+        folder.last_scan_at = datetime.utcnow()
+        self.db.commit()
+```
+
+### 3.2 Processor（处理管道）
+
+```python
+# services/processor/pipeline.py
+
+class VideoPipeline:
+    """视频处理管道"""
+    
+    def __init__(self, db: Session, ai: AIService, notifier: Notifier):
+        self.db = db
+        self.ai = ai
+        self.notifier = notifier
+    
+    async def process(self, video_id: int):
+        """处理视频的完整流程"""
+        video = self.db.query(Video).get(video_id)
+        
+        try:
+            # Step 1: 下载
+            video.status = VideoStatus.DOWNLOADING
+            self.db.commit()
+            video.video_path = await self.download(video.bvid)
+            
+            # Step 2: 提取音频
+            video.audio_path = await self.extract_audio(video.video_path)
+            
+            # Step 3: 转写
+            video.status = VideoStatus.TRANSCRIBING
+            self.db.commit()
+            transcript = await self.transcribe(video.audio_path)
+            video.transcript_path = await self.save_transcript(transcript)
+            
+            # Step 4: AI分析
+            video.status = VideoStatus.ANALYZING
+            self.db.commit()
+            
+            analysis = await self.ai.analyze(transcript, video.title)
+            video.summary = analysis["summary"]
+            video.key_points = json.dumps(analysis["key_points"])
+            video.concepts = json.dumps(analysis["concepts"])
+            
+            # Step 5: 向量化存储
+            await self.create_embeddings(video, transcript)
+            
+            # Step 6: 自动打标签
+            tags = await self.ai.suggest_tags(analysis)
+            await self.apply_tags(video, tags)
+            
+            # 完成
+            video.status = VideoStatus.DONE
+            video.processed_at = datetime.utcnow()
+            self.db.commit()
+            
+            # Step 7: 发送通知
+            await self.notifier.notify_complete(video)
+            
+        except Exception as e:
+            video.status = VideoStatus.FAILED
+            video.error_message = str(e)
+            self.db.commit()
+            raise
+```
+
+### 3.3 AI Agent
+
+```python
+# services/ai/summarizer.py
+
+class Summarizer:
+    """AI摘要生成"""
+    
+    def __init__(self, llm_client):
+        self.llm = llm_client
+    
+    async def analyze(self, transcript: str, title: str) -> dict:
+        """分析视频内容"""
+        
+        prompt = f"""
+        你是一个学习助手，请分析以下视频内容。
+        
+        视频标题：{title}
+        
+        转写文本：
+        {transcript[:8000]}  # 限制长度
+        
+        请提供：
+        1. 摘要（3句话以内，概括核心内容）
+        2. 核心观点（3-5条，每条一句话）
+        3. 关键概念（提取3-5个关键词/概念）
+        4. 金句（如果有值得记住的精彩表达）
+        
+        以JSON格式返回。
+        """
+        
+        response = await self.llm.chat(prompt)
+        return json.loads(response)
+
+
+# services/ai/qa.py
+
+class QAService:
+    """问答服务"""
+    
+    def __init__(self, db: Session, llm_client, embedder):
+        self.db = db
+        self.llm = llm_client
+        self.embedder = embedder
+    
+    async def ask(self, question: str, video_id: int = None) -> str:
+        """回答问题"""
+        
+        # 检索相关内容
+        if video_id:
+            # 针对特定视频
+            chunks = await self.get_video_chunks(video_id, question)
+        else:
+            # 跨视频检索
+            chunks = await self.semantic_search(question)
+        
+        context = "\n\n".join([c.content for c in chunks])
+        
+        prompt = f"""
+        基于以下视频内容回答用户问题。
+        
+        相关内容：
+        {context}
+        
+        用户问题：{question}
+        
+        请基于内容回答，如果内容中没有相关信息，请说明。
+        """
+        
+        return await self.llm.chat(prompt)
+    
+    async def semantic_search(self, query: str, top_k: int = 5):
+        """语义检索"""
+        query_embedding = await self.embedder.embed(query)
+        
+        # 使用向量相似度检索
+        chunks = self.db.query(TranscriptChunk).order_by(
+            TranscriptChunk.embedding.cosine_distance(query_embedding)
+        ).limit(top_k).all()
+        
+        return chunks
+```
+
+### 3.4 Notifier（通知服务）
+
+```python
+# services/notifier/wechat.py
+
+class WeChatNotifier:
+    """企业微信通知"""
+    
+    def __init__(self, webhook_url: str):
+        self.webhook_url = webhook_url
+    
+    async def notify_complete(self, video: Video):
+        """视频处理完成通知"""
+        
+        key_points = json.loads(video.key_points)
+        points_text = "\n".join([f"• {p}" for p in key_points[:3]])
+        
+        # 查找相关视频
+        related = await self.find_related(video)
+        related_text = ""
+        if related:
+            related_text = f"\n\n🔗 相关视频：{related[0].title}"
+        
+        message = f"""📺 新视频已处理完成
+
+「{video.title}」
+UP主: {video.author} | {video.duration // 60}分钟
+
+📝 摘要:
+{video.summary}
+
+💡 核心观点:
+{points_text}
+{related_text}
+
+回复数字继续:
+1-详细笔记 2-提问 3-完整文稿"""
+        
+        await self.send(message)
+    
+    async def send(self, message: str):
+        """发送消息"""
+        payload = {
+            "msgtype": "text",
+            "text": {"content": message}
+        }
+        async with aiohttp.ClientSession() as session:
+            await session.post(self.webhook_url, json=payload)
+```
+
+### 3.5 ASR适配层
+
+```python
+# services/asr/base.py
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class TranscriptSegment:
+    """转写片段"""
+    start: float      # 开始时间（秒）
+    end: float        # 结束时间（秒）
+    text: str         # 转写文本
+    confidence: float # 置信度
+
+@dataclass  
+class TranscriptResult:
+    """转写结果"""
+    text: str                        # 完整文本
+    segments: List[TranscriptSegment] # 分段信息
+    language: str                    # 检测到的语言
+    duration: float                  # 音频时长
+
+class ASRProvider(ABC):
+    """ASR提供者抽象基类"""
+    
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """提供者名称"""
+        pass
+    
+    @abstractmethod
+    async def transcribe(
+        self, 
+        audio_path: str,
+        language: Optional[str] = None,
+        **kwargs
+    ) -> TranscriptResult:
+        """执行转写"""
+        pass
+    
+    @abstractmethod
+    def is_available(self) -> bool:
+        """检查是否可用"""
+        pass
+
+
+# services/asr/whisper_local.py
+
+class WhisperLocalProvider(ASRProvider):
+    """本地Whisper模型"""
+    
+    name = "whisper_local"
+    
+    def __init__(self, model_size: str = "medium"):
+        self.model_size = model_size
+        self._model = None
+    
+    def _load_model(self):
+        if self._model is None:
+            import whisper
+            self._model = whisper.load_model(self.model_size)
+        return self._model
+    
+    async def transcribe(self, audio_path: str, language: str = None, **kwargs) -> TranscriptResult:
+        model = self._load_model()
+        result = model.transcribe(
+            audio_path,
+            language=language,
+            **kwargs
+        )
+        return TranscriptResult(
+            text=result["text"],
+            segments=[
+                TranscriptSegment(
+                    start=s["start"],
+                    end=s["end"],
+                    text=s["text"],
+                    confidence=s.get("confidence", 1.0)
+                )
+                for s in result["segments"]
+            ],
+            language=result["language"],
+            duration=result["segments"][-1]["end"] if result["segments"] else 0
+        )
+
+
+# services/asr/faster_whisper.py
+
+class FasterWhisperProvider(ASRProvider):
+    """Faster-Whisper (CTranslate2优化版)"""
+    
+    name = "faster_whisper"
+    
+    def __init__(self, model_size: str = "medium", device: str = "auto"):
+        self.model_size = model_size
+        self.device = device
+        self._model = None
+    
+    async def transcribe(self, audio_path: str, language: str = None, **kwargs) -> TranscriptResult:
+        from faster_whisper import WhisperModel
+        
+        if self._model is None:
+            self._model = WhisperModel(self.model_size, device=self.device)
+        
+        segments, info = self._model.transcribe(audio_path, language=language)
+        segments_list = list(segments)
+        
+        return TranscriptResult(
+            text=" ".join(s.text for s in segments_list),
+            segments=[
+                TranscriptSegment(
+                    start=s.start, end=s.end, 
+                    text=s.text, confidence=s.avg_logprob
+                )
+                for s in segments_list
+            ],
+            language=info.language,
+            duration=info.duration
+        )
+
+
+# services/asr/__init__.py
+
+class ASRManager:
+    """ASR管理器 - 统一调度不同ASR提供者"""
+    
+    providers = {
+        "whisper_local": WhisperLocalProvider,
+        "faster_whisper": FasterWhisperProvider,
+        "xunfei": XunfeiProvider,
+        "aliyun": AliyunProvider,
+        "openai_whisper": OpenAIWhisperProvider,
+    }
+    
+    def __init__(self, config: dict):
+        self.config = config
+        self.default_provider = config.get("default_asr", "whisper_local")
+        self._instances = {}
+    
+    def get_provider(self, name: str = None) -> ASRProvider:
+        """获取ASR提供者实例"""
+        name = name or self.default_provider
+        
+        if name not in self._instances:
+            provider_class = self.providers.get(name)
+            if not provider_class:
+                raise ValueError(f"未知的ASR提供者: {name}")
+            self._instances[name] = provider_class(**self.config.get(name, {}))
+        
+        return self._instances[name]
+    
+    async def transcribe(
+        self, 
+        audio_path: str, 
+        provider: str = None,
+        **kwargs
+    ) -> TranscriptResult:
+        """执行转写"""
+        asr = self.get_provider(provider)
+        return await asr.transcribe(audio_path, **kwargs)
+```
+
+### 3.6 MCP Server
+
+```python
+# services/mcp/server.py
+
+from mcp.server import Server
+from mcp.types import Tool, Resource
+
+class BiliLearnerMCPServer:
+    """Bili-Learner MCP Server"""
+    
+    def __init__(self, db: Session, qa_service: QAService):
+        self.db = db
+        self.qa = qa_service
+        self.server = Server("bili-learner")
+        self._register_tools()
+        self._register_resources()
+    
+    def _register_tools(self):
+        """注册MCP工具"""
+        
+        @self.server.tool()
+        async def search_videos(query: str, limit: int = 5) -> list:
+            """
+            搜索视频知识库
+            
+            Args:
+                query: 搜索关键词或问题
+                limit: 返回结果数量
+            
+            Returns:
+                匹配的视频列表，包含标题、摘要、相关度
+            """
+            results = await self.qa.semantic_search(query, top_k=limit)
+            return [
+                {
+                    "video_id": r.video.id,
+                    "bvid": r.video.bvid,
+                    "title": r.video.title,
+                    "summary": r.video.summary,
+                    "relevance": r.score
+                }
+                for r in results
+            ]
+        
+        @self.server.tool()
+        async def get_video_detail(video_id: int = None, bvid: str = None) -> dict:
+            """
+            获取视频详细信息
+            
+            Args:
+                video_id: 视频ID
+                bvid: B站BV号
+            
+            Returns:
+                视频详情，包含文稿、摘要、标签等
+            """
+            if bvid:
+                video = self.db.query(Video).filter(Video.bvid == bvid).first()
+            else:
+                video = self.db.query(Video).get(video_id)
+            
+            if not video:
+                return {"error": "视频不存在"}
+            
+            return {
+                "id": video.id,
+                "bvid": video.bvid,
+                "title": video.title,
+                "author": video.author,
+                "summary": video.summary,
+                "key_points": json.loads(video.key_points or "[]"),
+                "transcript": self._load_transcript(video),
+                "tags": [t.tag.name for t in video.tags]
+            }
+        
+        @self.server.tool()
+        async def ask_knowledge(
+            question: str, 
+            video_ids: list = None
+        ) -> dict:
+            """
+            基于知识库回答问题
+            
+            Args:
+                question: 用户问题
+                video_ids: 限定搜索的视频范围（可选）
+            
+            Returns:
+                AI回答及引用来源
+            """
+            answer = await self.qa.ask(question, video_ids)
+            return {
+                "answer": answer,
+                "sources": [...]  # 引用的视频片段
+            }
+        
+        @self.server.tool()
+        async def get_related_videos(
+            video_id: int = None, 
+            concept: str = None,
+            limit: int = 5
+        ) -> list:
+            """
+            获取相关视频
+            
+            Args:
+                video_id: 基于某视频查找相关
+                concept: 基于某概念查找相关
+                limit: 返回数量
+            
+            Returns:
+                相关视频列表
+            """
+            if video_id:
+                return await self._find_related_by_video(video_id, limit)
+            elif concept:
+                return await self._find_related_by_concept(concept, limit)
+            return []
+    
+    def _register_resources(self):
+        """注册MCP资源"""
+        
+        @self.server.resource("videos://list")
+        async def list_videos() -> str:
+            """视频列表资源"""
+            videos = self.db.query(Video).filter(
+                Video.status == VideoStatus.DONE
+            ).all()
+            return json.dumps([
+                {"id": v.id, "title": v.title, "bvid": v.bvid}
+                for v in videos
+            ])
+        
+        @self.server.resource("videos://{video_id}/transcript")
+        async def get_transcript(video_id: int) -> str:
+            """视频文稿资源"""
+            video = self.db.query(Video).get(video_id)
+            if video and video.transcript_path:
+                with open(video.transcript_path) as f:
+                    return f.read()
+            return ""
+    
+    async def run(self, transport="stdio"):
+        """运行MCP服务"""
+        await self.server.run(transport)
+
+
+# 启动脚本: python -m services.mcp
+if __name__ == "__main__":
+    import asyncio
+    server = BiliLearnerMCPServer(db, qa_service)
+    asyncio.run(server.run())
+```
+
+#### MCP配置示例（Claude Desktop）
+
+```json
+// ~/Library/Application Support/Claude/claude_desktop_config.json
+{
+  "mcpServers": {
+    "bili-learner": {
+      "command": "python",
+      "args": ["-m", "services.mcp"],
+      "cwd": "/path/to/bili-learner"
+    }
+  }
+}
+```
+
+---
+
+## 4. API设计
+
+### 4.1 RESTful API
+
+```yaml
+# Videos API
+GET    /api/videos              # 获取视频列表
+GET    /api/videos/:id          # 获取视频详情
+POST   /api/videos/upload       # 上传本地视频
+DELETE /api/videos/:id          # 删除视频
+
+# Chat API
+POST   /api/chat                # 问答
+  body: { question: string, video_id?: number }
+  response: { answer: string, sources: [] }
+
+# Stats API
+GET    /api/stats/overview      # 学习概览
+GET    /api/stats/weekly        # 周报数据
+GET    /api/stats/tags          # 标签分布
+
+# Folders API
+GET    /api/folders             # 获取监控的收藏夹
+POST   /api/folders             # 添加收藏夹
+DELETE /api/folders/:id         # 移除收藏夹
+
+# WeChat Webhook
+POST   /api/wechat/callback     # 接收微信消息
+```
+
+### 4.2 WebSocket（实时更新）
+
+```javascript
+// 处理进度实时推送
+ws.on("video:progress", { video_id, status, progress })
+ws.on("video:complete", { video_id, summary })
+ws.on("video:failed", { video_id, error })
+```
+
+---
+
+## 5. 技术选型
+
+| 组件 | 选型 | 理由 |
+|------|------|------|
+| 后端框架 | FastAPI | 异步支持好、类型提示、自动文档 |
+| 前端框架 | Next.js 14 | App Router、RSC、良好DX |
+| 数据库 | SQLite | 轻量、无需部署、够用 |
+| 向量数据库 | ChromaDB / SQLite-VSS | 嵌入式、易部署 |
+| 任务队列 | APScheduler + asyncio | 轻量、Python原生 |
+| LLM | OpenAI / Claude API | 主流、稳定 |
+| 微信 | 企业微信Webhook | 稳定、官方支持 |
+| MCP | mcp-python-sdk | 官方SDK、Claude原生支持 |
+
+### 5.1 ASR模型选型
+
+| 模型 | 速度 | 质量 | 成本 | 推荐场景 |
+|------|------|------|------|----------|
+| **Whisper (本地)** | ★★☆ | ★★★★ | 免费 | 默认选项、质量优先 |
+| **Faster-Whisper** | ★★★★ | ★★★★ | 免费 | 批量处理、速度优先 |
+| **讯飞ASR** | ★★★★★ | ★★★★ | 付费 | 中文优化、实时场景 |
+| **阿里Paraformer** | ★★★★ | ★★★☆ | 免费 | 中文、本地部署 |
+| **OpenAI Whisper API** | ★★★★★ | ★★★★★ | 付费 | 云端、不想本地部署 |
+
+### 5.2 推荐配置
+
+```yaml
+# config/asr.yaml
+asr:
+  default: "faster_whisper"  # 默认使用Faster-Whisper平衡速度和质量
+  
+  whisper_local:
+    model_size: "medium"
+    device: "auto"
+  
+  faster_whisper:
+    model_size: "medium"
+    device: "auto"
+    compute_type: "float16"
+  
+  xunfei:
+    app_id: "${XUNFEI_APP_ID}"
+    api_key: "${XUNFEI_API_KEY}"
+  
+  openai_whisper:
+    api_key: "${OPENAI_API_KEY}"
+    model: "whisper-1"
+  
+  # 自动切换规则
+  auto_switch:
+    enabled: true
+    rules:
+      - language: "zh"
+        provider: "faster_whisper"  # 中文用Faster-Whisper
+      - duration_gt: 3600
+        provider: "faster_whisper"  # 长视频用Faster-Whisper加速
+```
+
+---
+
+## 6. 部署架构
+
+### 6.1 开发环境
+
+```bash
+# 启动后端
+cd apps/api && uvicorn main:app --reload
+
+# 启动前端
+cd apps/web && npm run dev
+
+# 启动Worker
+python -m services.worker
+```
+
+### 6.2 生产环境
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  api:
+    build: ./apps/api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///data/db.sqlite
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+  
+  web:
+    build: ./apps/web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+  
+  worker:
+    build: ./services
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - api
+```
+
+---
+
+## 7. 开发计划
+
+### Week 1-2: 基础设施
+- [ ] 项目脚手架搭建
+- [ ] 数据库模型实现
+- [ ] 现有脚本迁移整合
+- [ ] Watcher服务实现
+- [ ] 基础处理管道
+
+### Week 3-4: 核心功能
+- [ ] AI摘要服务
+- [ ] 微信通知集成
+- [ ] Web UI基础页面
+- [ ] 问答功能
+
+### Week 5-6: 知识增强
+- [ ] 向量检索实现
+- [ ] 跨视频关联
+- [ ] 知识图谱可视化
+- [ ] 学习统计
+
+---
+
+*文档版本: v0.1*  
+*最后更新: 2024-12-01*

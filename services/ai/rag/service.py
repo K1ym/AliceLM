@@ -1,0 +1,209 @@
+"""
+RAG服务
+P2-07: 转写文本入库
+P2-08: 语义搜索
+P2-09: RAG问答
+"""
+
+from typing import List, Optional, Dict, Any
+
+from sqlalchemy.orm import Session
+
+from packages.db import Video
+from packages.logging import get_logger
+
+from .client import RAGFlowClient, SearchResult
+
+logger = get_logger(__name__)
+
+
+class RAGService:
+    """RAG服务 - 封装RAGFlow操作"""
+
+    def __init__(self, client: Optional[RAGFlowClient] = None):
+        """
+        初始化RAG服务
+        
+        Args:
+            client: RAGFlow客户端
+        """
+        self.client = client or RAGFlowClient()
+        self._dataset_cache: Dict[str, str] = {}
+
+    def _get_dataset_id(self, tenant_id: str) -> str:
+        """获取租户的Dataset ID"""
+        cache_key = str(tenant_id)
+        
+        if cache_key not in self._dataset_cache:
+            self._dataset_cache[cache_key] = self.client.get_or_create_dataset(cache_key)
+        
+        return self._dataset_cache[cache_key]
+
+    def index_video(
+        self,
+        tenant_id: int,
+        video: Video,
+        transcript: str,
+    ) -> str:
+        """
+        索引视频内容
+        
+        Args:
+            tenant_id: 租户ID
+            video: 视频对象
+            transcript: 转写文本
+            
+        Returns:
+            文档ID
+        """
+        dataset_id = self._get_dataset_id(str(tenant_id))
+        
+        doc_id = self.client.upload_document(
+            dataset_id=dataset_id,
+            video_id=video.id,
+            title=video.title,
+            transcript=transcript,
+            metadata={
+                "bvid": video.bvid,
+                "author": video.author,
+                "duration": video.duration,
+            },
+        )
+        
+        logger.info(
+            "video_indexed",
+            video_id=video.id,
+            bvid=video.bvid,
+            doc_id=doc_id,
+        )
+        
+        return doc_id
+
+    def search(
+        self,
+        tenant_id: int,
+        query: str,
+        top_k: int = 5,
+    ) -> List[SearchResult]:
+        """
+        语义搜索
+        
+        Args:
+            tenant_id: 租户ID
+            query: 搜索查询
+            top_k: 返回数量
+            
+        Returns:
+            搜索结果
+        """
+        dataset_id = self._get_dataset_id(str(tenant_id))
+        return self.client.search(dataset_id, query, top_k)
+
+    def ask(
+        self,
+        tenant_id: int,
+        question: str,
+        video_ids: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """
+        知识库问答
+        
+        Args:
+            tenant_id: 租户ID
+            question: 问题
+            video_ids: 限定的视频ID列表（可选）
+            
+        Returns:
+            问答结果
+        """
+        dataset_id = self._get_dataset_id(str(tenant_id))
+        
+        # TODO: 如果指定了video_ids，需要过滤
+        
+        result = self.client.ask(dataset_id, question)
+        
+        return {
+            "answer": result["answer"],
+            "sources": result["sources"],
+        }
+
+    def is_available(self) -> bool:
+        """检查服务是否可用"""
+        return self.client.is_available()
+
+
+class FallbackRAGService(RAGService):
+    """
+    降级RAG服务
+    当RAGFlow不可用时，使用简单的全文搜索
+    """
+
+    def __init__(self, db: Session):
+        """
+        初始化降级服务
+        
+        Args:
+            db: 数据库会话
+        """
+        self.db = db
+        self._client = None
+
+    def search(
+        self,
+        tenant_id: int,
+        query: str,
+        top_k: int = 5,
+    ) -> List[SearchResult]:
+        """降级搜索 - 使用数据库LIKE查询"""
+        from packages.db import Video
+        
+        videos = (
+            self.db.query(Video)
+            .filter(
+                Video.tenant_id == tenant_id,
+                Video.title.ilike(f"%{query}%"),
+            )
+            .limit(top_k)
+            .all()
+        )
+        
+        return [
+            SearchResult(
+                chunk_id=str(v.id),
+                content=v.title,
+                score=0.5,  # 简单匹配分数
+                metadata={"bvid": v.bvid},
+                video_id=v.id,
+                video_title=v.title,
+            )
+            for v in videos
+        ]
+
+    def ask(
+        self,
+        tenant_id: int,
+        question: str,
+        video_ids: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """降级问答 - 返回搜索结果"""
+        results = self.search(tenant_id, question, top_k=3)
+        
+        if not results:
+            return {
+                "answer": "抱歉，我没有找到相关内容。",
+                "sources": [],
+            }
+        
+        # 简单拼接
+        answer = f"找到 {len(results)} 个相关视频：\n"
+        for r in results:
+            answer += f"- {r.video_title}\n"
+        
+        return {
+            "answer": answer,
+            "sources": [{"video_id": r.video_id, "title": r.video_title} for r in results],
+        }
+
+    def is_available(self) -> bool:
+        """数据库降级始终可用"""
+        return True

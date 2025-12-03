@@ -1,0 +1,91 @@
+"""
+API依赖注入
+"""
+
+from typing import Generator, Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+
+from packages.config import get_config
+from packages.db import get_db_context, Tenant, User
+
+config = get_config()
+security = HTTPBearer(auto_error=False)
+
+
+def get_db() -> Generator[Session, None, None]:
+    """获取数据库会话"""
+    with get_db_context() as db:
+        yield db
+
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    获取当前认证用户
+    
+    支持两种模式:
+    1. JWT Token认证
+    2. 开发模式下允许无认证访问默认用户
+    """
+    # 开发模式允许无token访问
+    if config.debug and credentials is None:
+        user = db.query(User).filter(User.email == "admin@local").first()
+        if user:
+            return user
+    
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证信息",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = credentials.credentials
+    
+    try:
+        payload = jwt.decode(
+            token,
+            config.secret_key,
+            algorithms=["HS256"],
+        )
+        user_id_str = payload.get("sub")
+        if user_id_str is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="无效的Token",
+            )
+        user_id = int(user_id_str)
+    except (JWTError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token解析失败",
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+        )
+    
+    return user
+
+
+async def get_current_tenant(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Tenant:
+    """获取当前用户的租户"""
+    tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="租户不存在",
+        )
+    return tenant

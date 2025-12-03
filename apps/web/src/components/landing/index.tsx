@@ -1,0 +1,5 @@
+export { default as Header } from "./header"
+export { default as Hero } from "./hero"
+export { default as Featured } from "./featured"
+export { default as Promo } from "./promo"
+export { default as Footer } from "./footer"
