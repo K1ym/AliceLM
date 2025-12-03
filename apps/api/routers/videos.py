@@ -412,25 +412,13 @@ async def delete_video(
 async def reprocess_video(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """重新处理视频"""
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
+    video = service.reprocess_video(video_id, tenant.id)
     
     if not video:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="视频不存在",
-        )
-    
-    # 重置状态
-    video.status = VideoStatus.PENDING.value
-    video.error_message = None
-    db.commit()
+        raise NotFoundException("视频", video_id)
     
     return {"message": "已加入处理队列", "video_id": video_id}
 
@@ -438,77 +426,23 @@ async def reprocess_video(
 @router.get("/stats/summary")
 async def get_stats(
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """获取视频统计"""
-    total = db.query(Video).filter(Video.tenant_id == tenant.id).count()
-    
-    done = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.DONE.value)
-        .count()
-    )
-    
-    pending = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.PENDING.value)
-        .count()
-    )
-    
-    failed = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.FAILED.value)
-        .count()
-    )
-    
-    return {
-        "total": total,
-        "done": done,
-        "pending": pending,
-        "failed": failed,
-        "processing": total - done - pending - failed,
-    }
+    return service.get_stats(tenant.id)
 
 
 @router.get("/stats/tags")
 async def get_top_tags(
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
     limit: int = Query(default=5, ge=1, le=20),
 ):
-    """
-    获取Top标签统计
-    
-    从已处理视频的key_points/concepts字段聚合标签
-    """
-    from collections import Counter
-    
-    videos = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.status == VideoStatus.DONE.value)
-        .all()
-    )
-    
-    tag_counter: Counter = Counter()
-    
-    for video in videos:
-        # 解析concepts字段（JSON数组）
-        if video.concepts:
-            try:
-                concepts = json.loads(video.concepts)
-                if isinstance(concepts, list):
-                    for concept in concepts:
-                        if isinstance(concept, str) and concept.strip():
-                            tag_counter[concept.strip()] += 1
-            except json.JSONDecodeError:
-                pass
-    
-    # 获取Top N标签
-    top_tags = tag_counter.most_common(limit)
-    
+    """获取Top标签统计"""
+    tags = service.get_top_tags(tenant.id, limit)
     return {
-        "tags": [{"name": name, "count": count} for name, count in top_tags],
-        "total_videos": len(videos),
+        "tags": [{"name": t["tag"], "count": t["count"]} for t in tags],
+        "total_tags": len(tags),
     }
 
 

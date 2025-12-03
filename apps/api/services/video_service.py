@@ -165,3 +165,44 @@ class VideoService:
         if video and video.status == VideoStatus.FAILED.value:
             return self.repo.update_status(video_id, VideoStatus.PENDING.value)
         return None
+    
+    def reprocess_video(self, video_id: int, tenant_id: int) -> Optional[Video]:
+        """重新处理视频"""
+        from packages.db import VideoStatus
+        
+        video = self.get_video(video_id, tenant_id)
+        if not video:
+            return None
+        
+        video.status = VideoStatus.PENDING.value
+        video.error_message = None
+        self.repo.db.commit()
+        self.repo.db.refresh(video)
+        
+        logger.info("video_reprocess", video_id=video_id)
+        return video
+    
+    def get_stats(self, tenant_id: int) -> dict:
+        """获取视频统计"""
+        return self.repo.get_stats(tenant_id)
+    
+    def get_top_tags(self, tenant_id: int, limit: int = 5) -> List[dict]:
+        """获取热门标签"""
+        import json
+        from collections import Counter
+        
+        videos = self.repo.get_done_videos(tenant_id)
+        tag_counter: Counter = Counter()
+        
+        for video in videos:
+            if video.concepts:
+                try:
+                    concepts = json.loads(video.concepts)
+                    if isinstance(concepts, list):
+                        for concept in concepts:
+                            if isinstance(concept, str) and concept.strip():
+                                tag_counter[concept.strip()] += 1
+                except json.JSONDecodeError:
+                    pass
+        
+        return [{"tag": tag, "count": count} for tag, count in tag_counter.most_common(limit)]

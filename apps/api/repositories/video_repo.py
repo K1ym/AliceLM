@@ -120,3 +120,41 @@ class VideoRepository(BaseRepository[Video]):
             .limit(limit)
             .all()
         )
+    
+    def get_stats(self, tenant_id: int) -> dict:
+        """获取视频统计"""
+        from sqlalchemy import func
+        
+        total = self.db.query(func.count(Video.id)).filter(Video.tenant_id == tenant_id).scalar() or 0
+        
+        # 按状态分组统计
+        status_counts = (
+            self.db.query(Video.status, func.count(Video.id))
+            .filter(Video.tenant_id == tenant_id)
+            .group_by(Video.status)
+            .all()
+        )
+        
+        stats = {s.value: 0 for s in VideoStatus}
+        for status_val, count in status_counts:
+            stats[status_val] = count
+        
+        return {
+            "total": total,
+            "done": stats.get(VideoStatus.DONE.value, 0),
+            "pending": stats.get(VideoStatus.PENDING.value, 0),
+            "failed": stats.get(VideoStatus.FAILED.value, 0),
+            "processing": (
+                stats.get(VideoStatus.DOWNLOADING.value, 0) +
+                stats.get(VideoStatus.TRANSCRIBING.value, 0) +
+                stats.get(VideoStatus.ANALYZING.value, 0)
+            ),
+        }
+    
+    def get_done_videos(self, tenant_id: int) -> List[Video]:
+        """获取所有完成的视频"""
+        return (
+            self.db.query(Video)
+            .filter(Video.tenant_id == tenant_id, Video.status == VideoStatus.DONE.value)
+            .all()
+        )
