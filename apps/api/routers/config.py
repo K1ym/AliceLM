@@ -184,22 +184,22 @@ class ConfigUpdateResponse(BaseModel):
 
 def get_user_config(db: Session, user_id: int, key: str) -> Optional[str]:
     """获取用户配置 - 已迁移到 ConfigService"""
-    from ..repositories.user_repo import UserRepository
-    service = ConfigService(UserRepository(db))
+    from ..repositories.config_repo import ConfigRepository
+    service = ConfigService(ConfigRepository(db))
     return service.get_config(user_id, key)
 
 
 def set_user_config(db: Session, user_id: int, key: str, value: str) -> None:
     """设置用户配置 - 已迁移到 ConfigService"""
-    from ..repositories.user_repo import UserRepository
-    service = ConfigService(UserRepository(db))
+    from ..repositories.config_repo import ConfigRepository
+    service = ConfigService(ConfigRepository(db))
     service.set_config(user_id, key, value)
 
 
 def get_config_dict(db: Session, user_id: int, prefix: str) -> dict:
     """获取配置字典 - 已迁移到 ConfigService"""
-    from ..repositories.user_repo import UserRepository
-    service = ConfigService(UserRepository(db))
+    from ..repositories.config_repo import ConfigRepository
+    service = ConfigService(ConfigRepository(db))
     return service.get_config_dict(user_id, prefix)
 
 

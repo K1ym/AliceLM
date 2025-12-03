@@ -17,6 +17,7 @@ export { configApi } from "./config"
 export { bilibiliApi } from "./bilibili"
 export { foldersApi } from "./folders"
 export { systemApi, qaApi, suggestionsApi } from "./system"
+export { knowledgeApi } from "./knowledge"
 
 // 类型导出
 export type {

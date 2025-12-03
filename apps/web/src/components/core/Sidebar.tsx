@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Library, Settings, Plus, MessageSquare, Trash2 } from "lucide-react";
+import { Library, Settings, Plus, MessageSquare, Trash2, Network } from "lucide-react";
 import { Conversation } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
@@ -135,7 +135,7 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Knowledge Base Link */}
+        {/* Navigation Links */}
         <div className="space-y-1">
           <NavItem
             href="/home/library"
@@ -143,6 +143,12 @@ export function Sidebar({
             label="知识库"
             count={videoCount}
             active={isActive("/home/library")}
+          />
+          <NavItem
+            href="/home/graph"
+            icon={Network}
+            label="知识图谱"
+            active={isActive("/home/graph")}
           />
         </div>
       </div>

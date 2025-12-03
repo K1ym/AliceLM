@@ -6,11 +6,12 @@ P3-03: 问答API
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 from packages.db import Tenant
 from services.ai import RAGService, Summarizer
 
-from ..deps import get_current_tenant, get_video_service
+from ..deps import get_current_tenant, get_video_service, get_db
 from ..services import VideoService
 from ..exceptions import NotFoundException
 from ..schemas import QARequest, QAResponse, QASource, SearchRequest, SearchResult

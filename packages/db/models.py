@@ -48,6 +48,7 @@ class VideoStatus(enum.Enum):
     DOWNLOADING = "downloading"
     TRANSCRIBING = "transcribing"
     ANALYZING = "analyzing"
+    INDEXING = "indexing"  # 向量化索引中
     DONE = "done"
     FAILED = "failed"
 

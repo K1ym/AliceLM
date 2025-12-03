@@ -8,11 +8,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import jwt
+from sqlalchemy.orm import Session
 
 from packages.config import get_config
 from packages.db import User, Tenant
 
-from ..deps import get_current_user, get_auth_service
+from ..deps import get_current_user, get_auth_service, get_db
 from ..services import AuthService
 from ..services.auth_service import hash_password, verify_password
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserInfo, UpdateProfileRequest, ChangePasswordRequest

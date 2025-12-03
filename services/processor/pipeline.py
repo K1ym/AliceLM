@@ -225,7 +225,18 @@ class VideoPipeline:
                 # AI分析失败不阻塞流程
                 logger.warning("analysis_skipped", bvid=video.bvid, error=str(e))
 
-            # Step 5: 完成
+            # Step 5: 向量化（索引到知识库）
+            video.status = VideoStatus.INDEXING.value
+            db.commit()
+            
+            try:
+                logger.info("pipeline_step", step="indexing", bvid=video.bvid)
+                self._index_to_rag(video, result.text, db, user_id)
+            except Exception as e:
+                # 向量化失败不阻塞流程
+                logger.warning("indexing_skipped", bvid=video.bvid, error=str(e))
+
+            # Step 6: 完成
             video.status = VideoStatus.DONE.value
             video.processed_at = datetime.utcnow()
             db.commit()
@@ -265,6 +276,36 @@ class VideoPipeline:
                 )
             
             raise
+
+    def _index_to_rag(self, video: Video, transcript: str, db: Session, user_id: int = None):
+        """
+        索引视频到向量知识库
+        
+        Args:
+            video: 视频对象
+            transcript: 转写文本
+            db: 数据库会话
+            user_id: 用户ID（用于获取用户配置的 embedding）
+        """
+        from services.ai.rag import RAGService, get_rag_client
+        
+        # 获取 RAG 客户端（带用户配置）
+        client = get_rag_client(user_id=user_id)
+        rag_service = RAGService(client=client)
+        
+        # 索引视频
+        doc_id = rag_service.index_video(
+            tenant_id=video.tenant_id,
+            video=video,
+            transcript=transcript,
+        )
+        
+        logger.info(
+            "video_indexed",
+            video_id=video.id,
+            bvid=video.bvid,
+            doc_id=doc_id,
+        )
 
     def _save_transcript(self, bvid: str, result: TranscriptResult) -> Path:
         """保存转写结果"""
