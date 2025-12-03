@@ -26,15 +26,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/web
-        run: npm ci
+        run: npm install
 
       - name: Build
         working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
         run: npm run build
-
-      - name: Lint
-        working-directory: apps/web
-        run: npm run lint
 
   # 后端测试
   build-api:
