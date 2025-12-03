@@ -55,6 +55,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+      
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "."
+          target: ${{ secrets.DEPLOY_PATH }}
+          rm: true
+      
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -62,15 +74,12 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            # 创建目录（如果不存在）
-            mkdir -p ${{ secrets.DEPLOY_PATH }}
             cd ${{ secrets.DEPLOY_PATH }}
             
-            # 拉取代码（使用 GitHub 镜像加速）
-            if [ ! -d ".git" ]; then
-              git clone https://ghproxy.com/https://github.com/K1ym/AliceLM.git .
-            else
-              git pull
+            # 创建 .env 文件（如果不存在）
+            if [ ! -f .env ]; then
+              cp .env.example .env
+              echo "请编辑 .env 文件配置 API Keys"
             fi
             
             # 启动服务
