@@ -43,8 +43,10 @@ llm:
 
 # RAG配置
 rag:
-  provider: "ragflow"
-  base_url: "http://localhost:9380"
+  provider: "chroma"            # chroma (轻量级,推荐) / ragflow (生产环境)
+  chroma_persist_dir: "data/chroma"  # ChromaDB 数据目录
+  # RAGFlow 配置 (provider: ragflow 时使用)
+  # base_url: "http://localhost:9380"
   # api_key: 通过环境变量 ALICE_RAG__API_KEY 设置
 
 # 微信通知配置

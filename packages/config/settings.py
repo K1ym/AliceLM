@@ -44,9 +44,10 @@ class LLMSettings(BaseSettings):
 
 class RAGSettings(BaseSettings):
     """RAG配置"""
-    provider: str = Field(default="ragflow")
-    base_url: str = Field(default="http://localhost:9380")
+    provider: str = Field(default="chroma")  # chroma / ragflow
+    base_url: str = Field(default="http://localhost:9380")  # RAGFlow URL
     api_key: str = Field(default="")
+    chroma_persist_dir: str = Field(default="data/chroma")  # ChromaDB 数据目录
     
     class Config:
         env_prefix = "ALICE_RAG_"

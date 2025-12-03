@@ -3,31 +3,69 @@ RAG服务
 P2-07: 转写文本入库
 P2-08: 语义搜索
 P2-09: RAG问答
+
+支持多种后端:
+- ChromaDB (轻量级，开发环境推荐)
+- RAGFlow (生产环境)
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union, Protocol
 
 from sqlalchemy.orm import Session
 
 from packages.db import Video
+from packages.config import get_config
 from packages.logging import get_logger
-
-from .client import RAGFlowClient, SearchResult
 
 logger = get_logger(__name__)
 
 
-class RAGService:
-    """RAG服务 - 封装RAGFlow操作"""
+class RAGClient(Protocol):
+    """RAG 客户端协议 - 定义统一接口"""
+    def is_available(self) -> bool: ...
+    def get_or_create_dataset(self, tenant_id: str) -> str: ...
+    def upload_document(self, dataset_id: str, video_id: int, title: str, transcript: str, metadata: Optional[Dict] = None) -> str: ...
+    def search(self, dataset_id: str, query: str, top_k: int = 5) -> List: ...
+    def ask(self, dataset_id: str, question: str, conversation_id: Optional[str] = None) -> Dict[str, Any]: ...
 
-    def __init__(self, client: Optional[RAGFlowClient] = None):
+
+def get_rag_client() -> RAGClient:
+    """
+    根据配置获取 RAG 客户端
+    
+    配置项: rag.provider = "chroma" | "ragflow"
+    """
+    config = get_config()
+    provider = getattr(config.rag, 'provider', 'chroma')
+    
+    if provider == "ragflow":
+        from .client import RAGFlowClient
+        logger.info("rag_provider", provider="ragflow")
+        return RAGFlowClient()
+    else:
+        from .chroma_client import ChromaClient
+        logger.info("rag_provider", provider="chroma")
+        return ChromaClient()
+
+
+# 为了兼容性，从 chroma_client 导入 SearchResult
+try:
+    from .chroma_client import SearchResult
+except ImportError:
+    from .client import SearchResult
+
+
+class RAGService:
+    """RAG服务 - 自动选择后端"""
+
+    def __init__(self, client: Optional[RAGClient] = None):
         """
         初始化RAG服务
         
         Args:
-            client: RAGFlow客户端
+            client: RAG客户端 (可选，默认根据配置自动选择)
         """
-        self.client = client or RAGFlowClient()
+        self.client = client or get_rag_client()
         self._dataset_cache: Dict[str, str] = {}
 
     def _get_dataset_id(self, tenant_id: str) -> str:
