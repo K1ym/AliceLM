@@ -17,7 +17,9 @@ from services.ai import RAGService
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 from services.ai.context_compressor import ContextCompressor, create_compressor_from_config
 
-from ..deps import get_db, get_current_user
+from ..deps import get_db, get_current_user, get_chat_service
+from ..services import ChatService
+from ..exceptions import NotFoundException
 from .config import get_task_llm_config, get_user_prompt
 
 # 上下文压缩阈值
@@ -78,44 +80,30 @@ class ConversationDetailResponse(BaseModel):
 @router.get("", response_model=List[ConversationResponse])
 async def list_conversations(
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
 ):
     """获取对话列表"""
-    conversations = (
-        db.query(Conversation)
-        .filter(Conversation.user_id == user.id)
-        .order_by(Conversation.updated_at.desc())
-        .limit(50)
-        .all()
-    )
+    conversations, _ = service.list_conversations(user.id)
     
-    result = []
-    for conv in conversations:
-        msg_count = db.query(Message).filter(Message.conversation_id == conv.id).count()
-        result.append(ConversationResponse(
+    return [
+        ConversationResponse(
             id=conv.id,
             title=conv.title,
             created_at=conv.created_at,
             updated_at=conv.updated_at,
-            message_count=msg_count,
-        ))
-    
-    return result
+            message_count=service.get_message_count(conv.id),
+        )
+        for conv in conversations
+    ]
 
 
 @router.post("", response_model=ConversationResponse)
 async def create_conversation(
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
 ):
     """创建新对话"""
-    conversation = Conversation(
-        tenant_id=user.tenant_id,
-        user_id=user.id,
-    )
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+    conversation = service.create_conversation(user)
     
     return ConversationResponse(
         id=conversation.id,
@@ -130,26 +118,11 @@ async def create_conversation(
 async def delete_conversation(
     conversation_id: int,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
 ):
     """删除对话"""
-    conversation = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
-        .first()
-    )
-    
-    if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="对话不存在",
-        )
-    
-    # 删除关联的消息
-    db.query(Message).filter(Message.conversation_id == conversation_id).delete()
-    # 删除对话
-    db.delete(conversation)
-    db.commit()
+    if not service.delete_conversation(conversation_id, user.id):
+        raise NotFoundException("对话", conversation_id)
     
     return {"message": "对话已删除", "id": conversation_id}
 
@@ -158,27 +131,15 @@ async def delete_conversation(
 async def get_conversation(
     conversation_id: int,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
 ):
     """获取对话详情"""
-    conversation = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
-        .first()
-    )
+    conversation = service.get_conversation(conversation_id, user.id)
     
     if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="对话不存在",
-        )
+        raise NotFoundException("对话", conversation_id)
     
-    messages = (
-        db.query(Message)
-        .filter(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at)
-        .all()
-    )
+    messages = service.get_messages(conversation_id, user.id)
     
     return ConversationDetailResponse(
         id=conversation.id,

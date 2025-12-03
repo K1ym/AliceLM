@@ -22,7 +22,7 @@ class ConversationRepository(BaseRepository[Conversation]):
         user_id: int,
         video_id: Optional[int] = None,
         skip: int = 0,
-        limit: int = 20,
+        limit: int = 50,
     ) -> List[Conversation]:
         """获取用户的对话列表"""
         query = self.db.query(Conversation).filter(Conversation.user_id == user_id)
@@ -48,6 +48,18 @@ class ConversationRepository(BaseRepository[Conversation]):
             .filter(Conversation.id == conversation_id)
             .first()
         )
+    
+    def delete_with_messages(self, conversation_id: int) -> bool:
+        """删除对话及其消息"""
+        # 先删除消息
+        self.db.query(Message).filter(Message.conversation_id == conversation_id).delete()
+        # 再删除对话
+        conversation = self.get(conversation_id)
+        if conversation:
+            self.db.delete(conversation)
+            self.db.commit()
+            return True
+        return False
 
 
 class MessageRepository(BaseRepository[Message]):

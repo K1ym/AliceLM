@@ -124,8 +124,12 @@ class ChatService:
         conversation_id: int,
         user_id: int,
     ) -> bool:
-        """删除对话"""
+        """删除对话及其消息"""
         conversation = self.get_conversation(conversation_id, user_id)
         if conversation:
-            return self.conversation_repo.delete(conversation_id)
+            return self.conversation_repo.delete_with_messages(conversation_id)
         return False
+    
+    def get_message_count(self, conversation_id: int) -> int:
+        """获取对话消息数量"""
+        return len(self.message_repo.list_by_conversation(conversation_id))
