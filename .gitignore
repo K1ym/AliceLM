@@ -166,8 +166,9 @@ cython_debug/
 .idea/
 
 # Temp Folder
-bilibili_video/
-audio/
+data/audio/
+data/downloads/
+data/transcripts/
 outputs/
 
 # Executable files
@@ -205,5 +206,5 @@ Thumbs.db
 # ===================
 # Local dev
 # ===================
-bili2text-venv/
+alicelm-venv/
 *.local

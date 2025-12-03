@@ -168,17 +168,11 @@ class VideoService:
     
     def reprocess_video(self, video_id: int, tenant_id: int) -> Optional[Video]:
         """重新处理视频"""
-        from packages.db import VideoStatus
-        
         video = self.get_video(video_id, tenant_id)
         if not video:
             return None
         
-        video.status = VideoStatus.PENDING.value
-        video.error_message = None
-        self.repo.db.commit()
-        self.repo.db.refresh(video)
-        
+        video = self.repo.reset_for_reprocess(video)
         logger.info("video_reprocess", video_id=video_id)
         return video
     
@@ -206,3 +200,21 @@ class VideoService:
                     pass
         
         return [{"tag": tag, "count": count} for tag, count in tag_counter.most_common(limit)]
+    
+    def get_recent_done(self, tenant_id: int, limit: int = 5) -> List[Video]:
+        """获取最近完成的视频"""
+        return self.repo.get_recent_done(tenant_id, limit)
+    
+    def update_analysis(
+        self,
+        video_id: int,
+        tenant_id: int,
+        summary: str = None,
+        key_points: str = None,
+        concepts: str = None,
+    ) -> Optional[Video]:
+        """更新视频分析结果"""
+        video = self.get_video(video_id, tenant_id)
+        if not video:
+            return None
+        return self.repo.update_analysis(video_id, summary, key_points, concepts)

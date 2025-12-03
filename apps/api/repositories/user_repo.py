@@ -27,6 +27,18 @@ class UserRepository(BaseRepository[User]):
             .filter(User.tenant_id == tenant_id, User.email == email)
             .first()
         )
+    
+    def update_bilibili_bind(self, user: User, uid: str, sessdata: str) -> None:
+        """更新B站绑定信息"""
+        user.bilibili_uid = uid
+        user.bilibili_sessdata = sessdata
+        self.db.commit()
+    
+    def clear_bilibili_bind(self, user: User) -> None:
+        """清除B站绑定"""
+        user.bilibili_uid = None
+        user.bilibili_sessdata = None
+        self.db.commit()
 
 
 class TenantRepository(BaseRepository[Tenant]):
@@ -47,4 +59,11 @@ class TenantRepository(BaseRepository[Tenant]):
             self.db.add(tenant)
             self.db.commit()
             self.db.refresh(tenant)
+        return tenant
+    
+    def create_and_flush(self, **data) -> Tenant:
+        """创建租户并flush（不commit，用于事务中）"""
+        tenant = Tenant(**data)
+        self.db.add(tenant)
+        self.db.flush()
         return tenant

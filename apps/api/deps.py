@@ -18,8 +18,10 @@ from .repositories import (
     MessageRepository,
     UserRepository,
     TenantRepository,
+    FolderRepository,
+    ConfigRepository,
 )
-from .services import VideoService, ChatService
+from .services import VideoService, ChatService, FolderService, BilibiliService, ConfigService, AuthService
 
 config = get_config()
 security = HTTPBearer(auto_error=False)
@@ -122,6 +124,11 @@ def get_user_repo(db: Session = Depends(get_db)) -> UserRepository:
     return UserRepository(db)
 
 
+def get_folder_repo(db: Session = Depends(get_db)) -> FolderRepository:
+    """获取收藏夹仓储"""
+    return FolderRepository(db)
+
+
 # ========== Service 依赖注入 ==========
 
 def get_video_service(
@@ -138,3 +145,43 @@ def get_chat_service(
 ) -> ChatService:
     """获取对话服务"""
     return ChatService(conversation_repo, message_repo, video_repo)
+
+
+def get_folder_service(
+    folder_repo: FolderRepository = Depends(get_folder_repo),
+    video_repo: VideoRepository = Depends(get_video_repo),
+) -> FolderService:
+    """获取收藏夹服务"""
+    return FolderService(folder_repo, video_repo)
+
+
+def get_bilibili_service(
+    user_repo: UserRepository = Depends(get_user_repo),
+) -> BilibiliService:
+    """获取B站服务"""
+    return BilibiliService(user_repo)
+
+
+def get_config_repo(db: Session = Depends(get_db)) -> ConfigRepository:
+    """获取配置仓储"""
+    return ConfigRepository(db)
+
+
+def get_config_service(
+    config_repo: ConfigRepository = Depends(get_config_repo),
+) -> ConfigService:
+    """获取配置服务"""
+    return ConfigService(config_repo)
+
+
+def get_tenant_repo(db: Session = Depends(get_db)) -> TenantRepository:
+    """获取租户仓储"""
+    return TenantRepository(db)
+
+
+def get_auth_service(
+    user_repo: UserRepository = Depends(get_user_repo),
+    tenant_repo: TenantRepository = Depends(get_tenant_repo),
+) -> AuthService:
+    """获取认证服务"""
+    return AuthService(user_repo, tenant_repo)

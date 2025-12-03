@@ -10,14 +10,13 @@ import json
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from packages.db import User, Video, VideoStatus
 from packages.logging import get_logger
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 
-from ..deps import get_db, get_current_user
-from .config import get_task_llm_config
+from ..deps import get_current_user, get_video_service, get_config_service
+from ..services import VideoService, ConfigService
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -80,7 +79,7 @@ def _generate_default_suggestions() -> List[Suggestion]:
 
 async def _generate_suggestions_from_videos(
     videos: List[Video],
-    db: Session,
+    config_service: ConfigService,
     user_id: int,
 ) -> List[Suggestion]:
     """基于视频生成智能建议"""
@@ -116,7 +115,7 @@ async def _generate_suggestions_from_videos(
 
     try:
         # 获取用户配置的LLM
-        llm_config = get_task_llm_config(db, user_id, "chat")
+        llm_config = config_service.get_task_llm_config(user_id, "chat")
         
         if llm_config.get("api_key") and llm_config.get("base_url"):
             llm = create_llm_from_config(
@@ -164,23 +163,11 @@ async def _generate_suggestions_from_videos(
 @router.get("", response_model=SuggestionsResponse)
 async def get_suggestions(
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    video_service: VideoService = Depends(get_video_service),
+    config_service: ConfigService = Depends(get_config_service),
 ):
-    """
-    获取灵感建议
-    基于用户最近的视频生成个性化建议
-    """
-    # 获取用户最近处理完成的视频
-    recent_videos = (
-        db.query(Video)
-        .filter(
-            Video.tenant_id == user.tenant_id,
-            Video.status == VideoStatus.DONE.value,
-        )
-        .order_by(Video.processed_at.desc())
-        .limit(5)
-        .all()
-    )
+    """获取灵感建议"""
+    recent_videos = video_service.get_recent_done(user.tenant_id, limit=5)
     
     # 无视频时返回默认建议
     if not recent_videos:
@@ -202,7 +189,7 @@ async def get_suggestions(
         )
     
     # 生成新建议
-    suggestions = await _generate_suggestions_from_videos(recent_videos, db, user.id)
+    suggestions = await _generate_suggestions_from_videos(recent_videos, config_service, user.id)
     
     # 缓存结果
     _set_cache(cache_key, suggestions)

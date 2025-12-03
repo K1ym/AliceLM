@@ -1,6 +1,6 @@
 # AliceLM 前端架构文档
 
-> 版本: 1.0 | 更新: 2024-12
+> 版本: 2.0 | 更新: 2024-12-04
 
 ---
 
@@ -20,18 +20,19 @@
 ```
 apps/web/src/
 ├── app/                      # Next.js App Router
-│   ├── (auth)/               # 认证相关页面
-│   │   ├── login/
-│   │   └── register/
-│   ├── dashboard/            # 主应用
+│   ├── login/                # 登录页
+│   ├── register/             # 注册页
+│   ├── home/                 # 主应用 (需登录)
 │   │   ├── page.tsx          # 首页/对话
 │   │   ├── library/          # 知识库
 │   │   ├── video/[id]/       # 视频详情
-│   │   └── settings/         # 设置
-│   └── layout.tsx
+│   │   ├── settings/         # 设置
+│   │   └── layout.tsx        # 带 Sidebar 布局
+│   ├── layout.tsx            # 根布局
+│   └── providers.tsx         # Context Providers
 │
 ├── components/
-│   ├── ui/                   # 原子组件 (shadcn)
+│   ├── ui/                   # 原子组件 (shadcn, 26个)
 │   │   ├── button.tsx
 │   │   ├── badge.tsx
 │   │   ├── input.tsx
@@ -40,32 +41,37 @@ apps/web/src/
 │   ├── patterns/             # 模式组件 (设计系统)
 │   │   ├── ChatMessage.tsx   # 消息气泡
 │   │   ├── ThinkingBlock.tsx # 思维链
+│   │   └── index.ts
+│   │
+│   ├── core/                 # 核心组件
+│   │   ├── AliceInput.tsx    # 智能输入框
+│   │   ├── Sidebar.tsx       # 侧边栏
 │   │   ├── VideoCard.tsx     # 视频卡片
-│   │   ├── SourceRef.tsx     # 来源引用
-│   │   ├── Skeleton.tsx      # 骨架屏
-│   │   └── EmptyState.tsx    # 空状态
+│   │   └── theme-header.tsx  # 主题头部
 │   │
 │   ├── features/             # 功能组件
-│   │   ├── AliceInput/       # 智能输入框
-│   │   │   ├── index.tsx
-│   │   │   ├── MentionPopover.tsx
-│   │   │   └── ModelSelector.tsx
 │   │   ├── ChatView/         # 对话视图
-│   │   │   ├── index.tsx
-│   │   │   ├── MessageList.tsx
-│   │   │   └── StreamingMessage.tsx
-│   │   └── Sidebar/          # 侧边栏
+│   │   └── auth/             # 认证组件
+│   │       ├── login-form.tsx
+│   │       └── register-form.tsx
 │   │
+│   ├── video/                # 视频相关组件
+│   │   ├── CommentsTab.tsx
+│   │   ├── SummaryTab.tsx
+│   │   ├── TranscriptTab.tsx
+│   │   └── TabButton.tsx
+│   │
+│   ├── library/              # 知识库组件
+│   ├── settings/             # 设置组件
 │   └── landing/              # 落地页组件
 │
 ├── hooks/                    # 自定义 Hooks
 │   ├── useChat.ts            # 对话逻辑
-│   ├── useVideos.ts          # 视频逻辑
-│   ├── useConfig.ts          # 配置逻辑
-│   └── useMentions.ts        # @引用逻辑
+│   ├── useMentions.ts        # @引用逻辑
+│   └── index.ts
 │
 ├── lib/
-│   ├── api/                  # API 层 (按领域拆分)
+│   ├── api/                  # API 层 (按领域拆分, 10个模块)
 │   │   ├── index.ts          # 导出
 │   │   ├── client.ts         # Axios 实例
 │   │   ├── videos.ts

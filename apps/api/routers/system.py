@@ -8,12 +8,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from packages.db import User, Video, VideoStatus
 from packages.logging import get_logger
 
-from ..deps import get_db, get_current_user
+from ..deps import get_current_user, get_video_service
+from ..services import VideoService
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -41,24 +41,14 @@ class CleanupResult(BaseModel):
 @router.get("/storage", response_model=StorageStats)
 async def get_storage_stats(
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """获取存储统计信息"""
-    
-    # 视频统计
-    total = db.query(Video).filter(Video.tenant_id == user.tenant_id).count()
-    processed = db.query(Video).filter(
-        Video.tenant_id == user.tenant_id,
-        Video.status == VideoStatus.DONE.value,
-    ).count()
-    pending = db.query(Video).filter(
-        Video.tenant_id == user.tenant_id,
-        Video.status == VideoStatus.PENDING.value,
-    ).count()
-    failed = db.query(Video).filter(
-        Video.tenant_id == user.tenant_id,
-        Video.status == VideoStatus.FAILED.value,
-    ).count()
+    stats = service.get_stats(user.tenant_id)
+    total = stats["total"]
+    processed = stats["done"]
+    pending = stats["pending"]
+    failed = stats["failed"]
     
     # 文件统计
     def dir_size_mb(path: Path) -> tuple[int, float]:
@@ -90,14 +80,8 @@ async def get_storage_stats(
 async def cleanup_audio(
     retention_days: int = 1,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
-    """
-    手动清理已处理视频的音频文件
-    
-    Args:
-        retention_days: 保留天数，默认1天
-    """
+    """手动清理已处理视频的音频文件"""
     from services.scheduler.jobs import job_cleanup_audio
     
     logger.info("manual_cleanup_triggered", user_id=user.id, retention_days=retention_days)

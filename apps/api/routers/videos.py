@@ -50,128 +50,53 @@ class VideoImportResponse(BaseModel):
 async def import_video(
     request: VideoImportRequest,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    导入B站视频
-    
-    支持URL格式:
-    - https://www.bilibili.com/video/BV1xx411c7mD
-    - https://b23.tv/xxxxx (短链接)
-    - BV1xx411c7mD
-    - 包含BV号的任意文本
-    """
-    import re
-    import httpx
-    
-    url_or_text = request.url.strip()
-    
-    # 如果包含b23.tv短链接，先解析真实URL
-    b23_match = re.search(r'https?://b23\.tv/([a-zA-Z0-9]+)', url_or_text)
-    if b23_match:
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
-                resp = await client.head(f"https://b23.tv/{b23_match.group(1)}")
-                url_or_text = str(resp.url)
-        except Exception as e:
-            logger.warning("b23_redirect_failed", error=str(e))
-    
-    # 解析BV号
-    bvid_match = re.search(r'(BV[a-zA-Z0-9]+)', url_or_text)
-    if not bvid_match:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效的B站视频URL或BV号",
-        )
-    
-    bvid = bvid_match.group(1)
-    
-    # 检查是否已存在
-    existing = (
-        db.query(Video)
-        .filter(Video.tenant_id == tenant.id, Video.bvid == bvid)
-        .first()
-    )
-    
-    if existing:
-        return VideoImportResponse(
-            id=existing.id,
-            bvid=existing.bvid,
-            title=existing.title,
-            status=existing.status,
-            message="视频已存在",
-        )
-    
-    # 获取视频信息（使用BilibiliClient复用已有逻辑）
+    """导入B站视频"""
     try:
-        from services.watcher import BilibiliClient
-        
-        client = BilibiliClient()
-        # 使用B站API获取视频详情
-        info = client._request(
-            "https://api.bilibili.com/x/web-interface/view",
-            {"bvid": bvid}
+        video, is_new = await service.import_video(
+            url=request.url,
+            tenant=tenant,
+            auto_process=request.auto_process,
         )
-        client.close()
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"获取视频信息失败: {e}",
+        return VideoImportResponse(
+            id=video.id,
+            bvid=video.bvid,
+            title=video.title,
+            status=video.status,
+            message="已加入处理队列" if is_new else "视频已存在",
         )
-    
-    # 创建视频记录
-    video = Video(
-        tenant_id=tenant.id,
-        bvid=bvid,
-        title=info.get("title", bvid),
-        author=info.get("owner", {}).get("name", ""),
-        duration=info.get("duration", 0),
-        cover_url=info.get("pic"),
-        source_url=f"https://www.bilibili.com/video/{bvid}",
-        status=VideoStatus.PENDING.value if request.auto_process else VideoStatus.PENDING.value,
-    )
-    
-    db.add(video)
-    db.commit()
-    db.refresh(video)
-    
-    return VideoImportResponse(
-        id=video.id,
-        bvid=video.bvid,
-        title=video.title,
-        status=video.status,
-        message="已加入处理队列" if request.auto_process else "已添加，等待手动处理",
-    )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
 
 @router.post("/batch")
 async def import_videos_batch(
     urls: List[str],
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    批量导入视频
-    
-    最多支持20个URL
-    """
+    """批量导入视频（最多20个）"""
     if len(urls) > 20:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="单次最多导入20个视频",
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "单次最多导入20个视频")
     
     results = []
     for url in urls:
         try:
-            result = await import_video(
-                VideoImportRequest(url=url),
-                tenant=tenant,
-                db=db,
-            )
-            results.append({"url": url, "success": True, "data": result})
-        except HTTPException as e:
-            results.append({"url": url, "success": False, "error": e.detail})
+            video, is_new = await service.import_video(url, tenant)
+            results.append({
+                "url": url,
+                "success": True,
+                "data": VideoImportResponse(
+                    id=video.id,
+                    bvid=video.bvid,
+                    title=video.title,
+                    status=video.status,
+                    message="已加入处理队列" if is_new else "视频已存在",
+                ),
+            })
+        except (ValueError, Exception) as e:
+            results.append({"url": url, "success": False, "error": str(e)})
     
     return {
         "total": len(urls),
@@ -335,20 +260,12 @@ async def get_video(
 async def get_transcript(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
     """获取视频转写文本"""
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="视频不存在",
-        )
+        raise NotFoundException("视频", video_id)
     
     if not video.transcript_path:
         raise HTTPException(
@@ -454,21 +371,12 @@ async def process_video_now(
     background_tasks: BackgroundTasks,
     user = Depends(get_current_user),
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    立即开始处理视频（异步后台任务）
-    
-    用于导入后立即触发处理，而不是等待定时任务
-    """
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    """立即开始处理视频"""
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(status_code=404, detail="视频不存在")
+        raise NotFoundException("视频", video_id)
     
     if video.status not in [VideoStatus.PENDING.value, VideoStatus.FAILED.value]:
         return {
@@ -503,21 +411,12 @@ async def process_video_now(
 async def get_video_status(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    获取视频处理状态
-    
-    用于前端轮询进度
-    """
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    """获取视频处理状态"""
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(status_code=404, detail="视频不存在")
+        raise NotFoundException("视频", video_id)
     
     return {
         "id": video.id,
@@ -532,31 +431,18 @@ async def get_video_status(
 async def cancel_video_processing(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    取消视频处理
-    
-    将状态重置为pending，或者删除视频
-    """
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    """取消视频处理"""
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(status_code=404, detail="视频不存在")
+        raise NotFoundException("视频", video_id)
     
-    # 只能取消pending或processing状态的任务
     if video.status == VideoStatus.DONE.value:
         return {"message": "视频已处理完成，无法取消", "status": video.status}
     
-    # 重置为pending状态（如果用户想重新处理可以再触发）
     old_status = video.status
-    video.status = VideoStatus.PENDING.value
-    video.error_message = None
-    db.commit()
+    updated = service.update_status(video_id, tenant.id, VideoStatus.PENDING.value)
     
     return {
         "message": "已取消处理",
@@ -570,30 +456,17 @@ async def cancel_video_processing(
 async def remove_from_queue(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    从队列中移除视频（删除视频记录）
-    """
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    """从队列中移除视频"""
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(status_code=404, detail="视频不存在")
+        raise NotFoundException("视频", video_id)
     
-    # 只能删除pending或failed状态的任务
     if video.status not in [VideoStatus.PENDING.value, VideoStatus.FAILED.value]:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"只能删除等待中或失败的任务，当前状态: {video.status}"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"只能删除等待中或失败的任务，当前: {video.status}")
     
-    db.delete(video)
-    db.commit()
-    
+    service.delete_video(video_id, tenant.id)
     return {"message": "已从队列移除", "video_id": video_id}
 
 
@@ -605,19 +478,12 @@ async def get_video_comments(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    获取视频的B站评论
-    """
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    """获取视频的B站评论"""
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(status_code=404, detail="视频不存在")
+        raise NotFoundException("视频", video_id)
     
     try:
         from services.watcher import BilibiliClient

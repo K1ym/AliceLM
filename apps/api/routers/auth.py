@@ -8,13 +8,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import jwt
-import bcrypt
-from sqlalchemy.orm import Session
 
 from packages.config import get_config
 from packages.db import User, Tenant
 
-from ..deps import get_db, get_current_user
+from ..deps import get_current_user, get_auth_service
+from ..services import AuthService
+from ..services.auth_service import hash_password, verify_password
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserInfo, UpdateProfileRequest, ChangePasswordRequest
 
 router = APIRouter()
@@ -40,51 +40,17 @@ def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None)
     return jwt.encode(payload, config.secret_key, algorithm="HS256")
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
-    return bcrypt.checkpw(
-        plain_password.encode('utf-8')[:72], 
-        hashed_password.encode('utf-8')
-    )
-
-
-def hash_password(password: str) -> str:
-    """哈希密码"""
-    return bcrypt.hashpw(
-        password.encode('utf-8')[:72], 
-        bcrypt.gensalt()
-    ).decode('utf-8')
-
-
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: LoginRequest,
-    db: Session = Depends(get_db),
+    service: AuthService = Depends(get_auth_service),
 ):
-    """
-    用户登录
-    
-    返回JWT Token用于后续API调用
-    """
-    user = db.query(User).filter(User.email == request.email).first()
-    
+    """用户登录"""
+    user = service.authenticate(request.email, request.password, debug_mode=config.debug)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="邮箱或密码错误",
-        )
-    
-    # 开发模式下允许空密码登录
-    if config.debug and not user.password_hash:
-        pass
-    elif not user.password_hash or not verify_password(request.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="邮箱或密码错误",
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "邮箱或密码错误")
     
     access_token = create_access_token(user.id)
-    
     return TokenResponse(
         access_token=access_token,
         expires_in=ACCESS_TOKEN_EXPIRE_HOURS * 3600,
@@ -94,39 +60,13 @@ async def login(
 @router.post("/register", response_model=TokenResponse)
 async def register(
     request: RegisterRequest,
-    db: Session = Depends(get_db),
+    service: AuthService = Depends(get_auth_service),
 ):
-    """
-    用户注册
+    """用户注册"""
+    if service.email_exists(request.email):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "该邮箱已被注册")
     
-    创建新用户和个人租户，返回JWT Token
-    """
-    # 检查邮箱是否已存在
-    existing_user = db.query(User).filter(User.email == request.email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="该邮箱已被注册",
-        )
-    
-    # 创建个人租户
-    tenant = Tenant(
-        name=f"{request.username}的空间",
-        slug=f"user-{request.email.split('@')[0]}-{datetime.utcnow().timestamp():.0f}",
-    )
-    db.add(tenant)
-    db.flush()
-    
-    # 创建用户
-    user = User(
-        tenant_id=tenant.id,
-        email=request.email,
-        username=request.username,
-        password_hash=hash_password(request.password),
-    )
-    db.add(user)
-    db.commit()
-    
+    user, _ = service.register(request.email, request.username, request.password)
     access_token = create_access_token(user.id)
     
     return TokenResponse(

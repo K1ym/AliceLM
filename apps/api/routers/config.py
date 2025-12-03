@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from packages.db import User, UserConfig
 from packages.logging import get_logger
 
-from ..deps import get_db, get_current_user
+from ..deps import get_db, get_current_user, get_config_service
+from ..services import ConfigService
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -179,43 +180,27 @@ class ConfigUpdateResponse(BaseModel):
 
 
 # ========== Helper Functions ==========
+# 这些函数委托给 ConfigService，保留以兼容现有代码
 
 def get_user_config(db: Session, user_id: int, key: str) -> Optional[str]:
-    """获取用户配置"""
-    config = (
-        db.query(UserConfig)
-        .filter(UserConfig.user_id == user_id, UserConfig.key == key)
-        .first()
-    )
-    return config.value if config else None
+    """获取用户配置 - 已迁移到 ConfigService"""
+    from ..repositories.user_repo import UserRepository
+    service = ConfigService(UserRepository(db))
+    return service.get_config(user_id, key)
 
 
 def set_user_config(db: Session, user_id: int, key: str, value: str) -> None:
-    """设置用户配置"""
-    config = (
-        db.query(UserConfig)
-        .filter(UserConfig.user_id == user_id, UserConfig.key == key)
-        .first()
-    )
-    
-    if config:
-        config.value = value
-    else:
-        config = UserConfig(user_id=user_id, key=key, value=value)
-        db.add(config)
-    
-    db.commit()
+    """设置用户配置 - 已迁移到 ConfigService"""
+    from ..repositories.user_repo import UserRepository
+    service = ConfigService(UserRepository(db))
+    service.set_config(user_id, key, value)
 
 
 def get_config_dict(db: Session, user_id: int, prefix: str) -> dict:
-    """获取配置字典"""
-    raw = get_user_config(db, user_id, prefix)
-    if raw:
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            pass
-    return {}
+    """获取配置字典 - 已迁移到 ConfigService"""
+    from ..repositories.user_repo import UserRepository
+    service = ConfigService(UserRepository(db))
+    return service.get_config_dict(user_id, prefix)
 
 
 def get_task_llm_config(db: Session, user_id: int, task_type: str) -> dict:

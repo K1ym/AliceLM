@@ -9,7 +9,6 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from packages.db import Conversation, Message, MessageRole, User
 from packages.logging import get_logger
@@ -17,10 +16,9 @@ from services.ai import RAGService
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 from services.ai.context_compressor import ContextCompressor, create_compressor_from_config
 
-from ..deps import get_db, get_current_user, get_chat_service
-from ..services import ChatService
+from ..deps import get_current_user, get_chat_service, get_config_service
+from ..services import ChatService, ConfigService
 from ..exceptions import NotFoundException
-from .config import get_task_llm_config, get_user_prompt
 
 # 上下文压缩阈值
 CONTEXT_CHAR_THRESHOLD = 20000  # 20k字符触发压缩
@@ -159,29 +157,6 @@ async def get_conversation(
     )
 
 
-@router.delete("/{conversation_id}")
-async def delete_conversation(
-    conversation_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """删除对话"""
-    conversation = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
-        .first()
-    )
-    
-    if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="对话不存在",
-        )
-    
-    db.delete(conversation)
-    db.commit()
-    
-    return {"message": "删除成功"}
 
 
 # RAG和LLM服务实例（延迟初始化）
@@ -212,62 +187,28 @@ async def send_message_stream(
     conversation_id: int,
     request: MessageCreate,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    service: ChatService = Depends(get_chat_service),
+    config_service: ConfigService = Depends(get_config_service),
 ):
-    """
-    发送消息并获取流式AI回复
-    
-    返回SSE格式的流式响应：
-    - type: thinking - 思维链内容
-    - type: content - 正常回复内容
-    - type: done - 完成，包含完整内容
-    - type: error - 错误信息
-    """
-    # 提前提取需要的值（避免Session detach问题）
+    """发送消息并获取流式AI回复"""
     user_id = user.id
     tenant_id = user.tenant_id
     message_content = request.content
     
-    conversation = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
-        .first()
-    )
-    
+    conversation = service.get_conversation(conversation_id, user_id)
     if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="对话不存在",
-        )
+        raise NotFoundException("对话", conversation_id)
     
-    # 保存用户消息
-    user_message = Message(
-        conversation_id=conversation_id,
-        role=MessageRole.USER,
-        content=message_content,
-    )
-    db.add(user_message)
+    # 保存用户消息并更新对话标题
+    service.send_user_message(conversation_id, user_id, message_content)
     
-    # 更新对话标题（首条消息时）
-    if not conversation.title:
-        conversation.title = message_content[:30] + ("..." if len(message_content) > 30 else "")
-    
-    conversation.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user_message)
-    
-    # 预先获取配置（在Session有效时）
-    llm_config = get_task_llm_config(db, user_id, "chat")
-    compress_config = get_task_llm_config(db, user_id, "context_compress")
-    chat_system_prompt = get_user_prompt(db, user_id, "chat")
+    # 预先获取配置
+    llm_config = config_service.get_task_llm_config(user_id, "chat")
+    compress_config = config_service.get_task_llm_config(user_id, "context_compress")
+    chat_system_prompt = config_service.get_user_prompt(user_id, "chat")
     
     # 预先获取历史和压缩信息（在流式前完成）
-    all_history = (
-        db.query(Message)
-        .filter(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.asc())
-        .all()
-    )
+    all_history = service.get_messages(conversation_id, user_id, limit=1000)
     history_data = [{"role": m.role.value, "content": m.content, "id": m.id} for m in all_history]
     total_chars = sum(len(m["content"]) for m in history_data)
     compressed_context = conversation.compressed_context
@@ -293,10 +234,8 @@ async def send_message_stream(
             result = compressor.compress(msgs_to_compress, compressed_context)
             
             # 保存压缩结果
-            conversation.compressed_context = result.compressed
-            conversation.compressed_at_message_id = old_msgs[-1]["id"] if old_msgs else 0
-            db.commit()
-            
+            last_msg_id = old_msgs[-1]["id"] if old_msgs else 0
+            service.update_compressed_context(conversation_id, user_id, result.compressed, last_msg_id)
             compressed_context = result.compressed
             logger.info(
                 "context_compressed_before_stream",
@@ -306,7 +245,6 @@ async def send_message_stream(
     
     async def generate_stream():
         from starlette.concurrency import iterate_in_threadpool
-        from packages.db import get_db_context
         
         full_content = ""
         full_reasoning = ""
@@ -369,17 +307,9 @@ async def send_message_stream(
                     full_reasoning = chunk.get("full_reasoning", full_reasoning)
                     
                     # 保存结果
-                    with get_db_context() as save_db:
-                        ai_message = Message(
-                            conversation_id=conversation_id,
-                            role=MessageRole.ASSISTANT,
-                            content=full_content,
-                            sources=json.dumps({"reasoning": full_reasoning}) if full_reasoning else None,
-                        )
-                        save_db.add(ai_message)
-                        save_db.commit()
-                        save_db.refresh(ai_message)
-                        msg_id = ai_message.id
+                    sources = json.dumps({"reasoning": full_reasoning}) if full_reasoning else None
+                    ai_message = service.save_ai_message(conversation_id, full_content, sources)
+                    msg_id = ai_message.id
                     
                     yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'reasoning': full_reasoning}, ensure_ascii=False)}\n\n"
                     

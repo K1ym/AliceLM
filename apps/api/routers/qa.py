@@ -6,12 +6,13 @@ P3-03: 问答API
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
 from packages.db import Tenant
 from services.ai import RAGService, Summarizer
 
-from ..deps import get_db, get_current_tenant
+from ..deps import get_current_tenant, get_video_service
+from ..services import VideoService
+from ..exceptions import NotFoundException
 from ..schemas import QARequest, QAResponse, QASource, SearchRequest, SearchResult
 
 router = APIRouter()
@@ -131,45 +132,24 @@ async def search_videos(
 async def summarize_video(
     video_id: int,
     tenant: Tenant = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
+    service: VideoService = Depends(get_video_service),
 ):
-    """
-    生成视频摘要
-    
-    对指定视频重新生成AI摘要
-    """
-    from packages.db import Video
+    """生成视频摘要"""
     import json
+    from pathlib import Path
     
-    video = (
-        db.query(Video)
-        .filter(Video.id == video_id, Video.tenant_id == tenant.id)
-        .first()
-    )
-    
+    video = service.get_video(video_id, tenant.id)
     if not video:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="视频不存在",
-        )
+        raise NotFoundException("视频", video_id)
     
     if not video.transcript_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="视频尚未转写",
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "视频尚未转写")
     
-    from pathlib import Path
     transcript_path = Path(video.transcript_path)
-    
     if not transcript_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="转写文件不存在",
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "转写文件不存在")
     
     transcript = transcript_path.read_text(encoding="utf-8")
-    
     summarizer = get_summarizer()
     
     try:
@@ -181,10 +161,12 @@ async def summarize_video(
         )
         
         # 更新数据库
-        video.summary = analysis.summary
-        video.key_points = json.dumps(analysis.key_points, ensure_ascii=False)
-        video.concepts = json.dumps(analysis.concepts, ensure_ascii=False)
-        db.commit()
+        service.update_analysis(
+            video_id, tenant.id,
+            summary=analysis.summary,
+            key_points=json.dumps(analysis.key_points, ensure_ascii=False),
+            concepts=json.dumps(analysis.concepts, ensure_ascii=False),
+        )
         
         return {
             "video_id": video_id,

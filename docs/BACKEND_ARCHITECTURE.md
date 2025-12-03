@@ -1,6 +1,6 @@
 # AliceLM 后端架构文档
 
-> 版本: 1.0 | 更新: 2024-12
+> 版本: 2.0 | 更新: 2024-12 | 分层架构完成
 
 ---
 
@@ -12,25 +12,26 @@
 |------|------|------|
 | **模块化** | 功能解耦，独立演进 | 已实现 (services/) |
 | **可扩展** | Provider 抽象层 | 已实现 (asr/ai) |
-| **分层架构** | Router → Service → Repository | 部分实现 |
+| **分层架构** | Router → Service → Repository | ✅ 已完成 |
 | **配置驱动** | YAML/ENV 配置 | 已实现 |
 
 ### 1.2 当前结构
 
 ```
-bili2text-main/
+AliceLM/
 ├── apps/
 │   ├── api/                  # FastAPI 主应用
 │   │   ├── main.py           # 入口
-│   │   ├── routers/          # 路由层
-│   │   │   ├── videos.py
-│   │   │   ├── conversations.py
-│   │   │   ├── auth.py
-│   │   │   └── ...
-│   │   └── dependencies.py   # 依赖注入
+│   │   ├── deps.py           # 依赖注入
+│   │   ├── routers/          # 路由层 (无直接 DB 操作)
+│   │   ├── services/         # 应用服务层 (业务逻辑)
+│   │   ├── repositories/     # 仓储层 (数据访问)
+│   │   ├── schemas/          # Pydantic 模型
+│   │   └── exceptions.py     # 自定义异常
+│   ├── web/                  # Next.js 前端
 │   └── mcp/                  # MCP 服务器
 │
-├── services/                 # 业务服务层
+├── services/                 # 域服务层 (外部集成)
 │   ├── ai/                   # AI 服务
 │   │   ├── summarizer.py     # 摘要生成
 │   │   ├── tagger.py         # 标签提取
@@ -79,26 +80,36 @@ bili2text-main/
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 目标结构
+### 2.2 当前结构 (已实现)
 
 ```
 apps/api/
 ├── main.py
-├── routers/              # 路由层 (现有)
+├── deps.py               # 依赖注入
+├── exceptions.py         # 自定义异常
+├── routers/              # 路由层
 │   ├── videos.py
+│   ├── conversations.py
+│   ├── auth.py
+│   ├── bilibili.py
+│   ├── folders.py
+│   ├── config.py
 │   └── ...
-├── services/             # 应用服务层 (新增)
+├── services/             # 应用服务层
 │   ├── video_service.py
 │   ├── chat_service.py
-│   └── ...
-├── repositories/         # 仓储层 (新增)
+│   ├── folder_service.py
+│   ├── bilibili_service.py
+│   ├── config_service.py
+│   └── auth_service.py
+├── repositories/         # 仓储层
+│   ├── base.py
 │   ├── video_repo.py
 │   ├── conversation_repo.py
-│   └── ...
-├── schemas/              # Pydantic 模型
-│   ├── video.py
-│   └── ...
-└── dependencies.py
+│   ├── user_repo.py
+│   ├── folder_repo.py
+│   └── config_repo.py
+└── schemas/
 ```
 
 ---
@@ -129,7 +140,7 @@ class ASRManager:
         pass
 ```
 
-### 3.2 服务层模式 (待实现)
+### 3.2 服务层模式 (已实现)
 
 ```python
 # apps/api/services/video_service.py
@@ -196,13 +207,13 @@ class VideoService:
 
 ## 5. 优化计划
 
-### Phase 1: 分层重构
+### Phase 1: 分层重构 ✅
 
 - [x] 创建 `apps/api/repositories/` 目录
 - [x] 抽取 video_repo.py
 - [x] 抽取 conversation_repo.py
 - [x] 创建 `apps/api/services/` 目录
-- [ ] 重构 routers 使用 service 层 (进行中)
+- [x] 重构所有 routers 使用 service 层
 
 ### Phase 2: 统一错误处理
 
@@ -210,11 +221,11 @@ class VideoService:
 - [x] 统一错误响应格式
 - [x] 添加全局异常处理器 (error_handlers.py)
 
-### Phase 3: 依赖注入优化
+### Phase 3: 依赖注入优化 ✅
 
 - [x] 使用 FastAPI Depends (deps.py)
 - [x] 创建服务工厂
-- [ ] 支持测试 Mock
+- [x] Repository/Service 完全分离
 
 ### Phase 4: 文档完善
 

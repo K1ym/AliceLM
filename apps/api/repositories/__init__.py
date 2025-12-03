@@ -7,6 +7,8 @@ from .base import BaseRepository
 from .video_repo import VideoRepository
 from .conversation_repo import ConversationRepository, MessageRepository
 from .user_repo import UserRepository, TenantRepository
+from .folder_repo import FolderRepository
+from .config_repo import ConfigRepository
 
 __all__ = [
     "BaseRepository",
@@ -15,4 +17,6 @@ __all__ = [
     "MessageRepository",
     "UserRepository",
     "TenantRepository",
+    "FolderRepository",
+    "ConfigRepository",
 ]

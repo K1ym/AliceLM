@@ -8,10 +8,10 @@ from typing import List, Dict
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from packages.db import Tenant
+from packages.db import Tenant, User
 from services.knowledge import KnowledgeGraphService, LearningService
 
-from ..deps import get_db, get_current_tenant
+from ..deps import get_db, get_current_tenant, get_current_user
 
 router = APIRouter()
 
@@ -62,17 +62,10 @@ async def get_related_concepts(
 @router.get("/learning/stats")
 async def get_learning_stats(
     days: int = 7,
-    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """获取学习统计"""
-    from packages.db import User
-    
-    # 获取租户默认用户
-    user = db.query(User).filter(User.tenant_id == tenant.id).first()
-    if not user:
-        return {"error": "No user found"}
-    
     service = LearningService(db)
     stats = service.get_user_stats(user.id, days)
     
@@ -88,16 +81,10 @@ async def get_learning_stats(
 
 @router.get("/learning/weekly-report")
 async def get_weekly_report(
-    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """获取周报"""
-    from packages.db import User
-    
-    user = db.query(User).filter(User.tenant_id == tenant.id).first()
-    if not user:
-        return {"error": "No user found"}
-    
     service = LearningService(db)
     report = service.generate_weekly_report(user.id)
     
@@ -117,15 +104,9 @@ async def get_weekly_report(
 @router.get("/learning/review-suggestions")
 async def get_review_suggestions(
     limit: int = 5,
-    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """获取复习建议"""
-    from packages.db import User
-    
-    user = db.query(User).filter(User.tenant_id == tenant.id).first()
-    if not user:
-        return []
-    
     service = LearningService(db)
     return service.get_review_suggestions(user.id, limit)

@@ -35,8 +35,8 @@ sudo apt install docker-compose-plugin
 ### 2. 克隆项目
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/bili2text.git
-cd bili2text
+git clone https://github.com/YOUR_USERNAME/AliceLM.git
+cd AliceLM
 ```
 
 ### 3. 配置环境变量
@@ -197,7 +197,7 @@ docker compose -f docker-compose.prod.yml logs --tail=100
 ```bash
 # 检查网络
 docker network ls
-docker network inspect bili2text-main_alicelm
+docker network inspect alicelm_default
 ```
 
 ### 内存不足

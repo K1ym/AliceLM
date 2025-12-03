@@ -133,3 +133,67 @@ class ChatService:
     def get_message_count(self, conversation_id: int) -> int:
         """获取对话消息数量"""
         return len(self.message_repo.list_by_conversation(conversation_id))
+    
+    def send_user_message(
+        self,
+        conversation_id: int,
+        user_id: int,
+        content: str,
+    ) -> Message:
+        """
+        发送用户消息
+        - 保存消息
+        - 自动更新对话标题（首条消息时）
+        - 更新对话时间戳
+        """
+        from packages.db import MessageRole
+        
+        conversation = self.get_conversation(conversation_id, user_id)
+        if not conversation:
+            raise ValueError("对话不存在")
+        
+        # 创建用户消息
+        user_message = self.message_repo.add_message(
+            conversation_id=conversation_id,
+            role=MessageRole.USER.value,
+            content=content,
+        )
+        
+        # 更新对话标题（首条消息时）
+        if not conversation.title or conversation.title == "新对话":
+            title = content[:30] + ("..." if len(content) > 30 else "")
+            self.conversation_repo.update_title_and_timestamp(conversation, title)
+        
+        return user_message
+    
+    def update_compressed_context(
+        self,
+        conversation_id: int,
+        user_id: int,
+        compressed_context: str,
+        compressed_at_message_id: int,
+    ) -> None:
+        """更新对话的压缩上下文"""
+        conversation = self.get_conversation(conversation_id, user_id)
+        if not conversation:
+            raise ValueError("对话不存在")
+        
+        self.conversation_repo.update_compressed_context(
+            conversation, compressed_context, compressed_at_message_id
+        )
+    
+    def save_ai_message(
+        self,
+        conversation_id: int,
+        content: str,
+        sources: str = None,
+    ) -> Message:
+        """保存AI回复消息"""
+        from packages.db import MessageRole
+        
+        return self.message_repo.add_message(
+            conversation_id=conversation_id,
+            role=MessageRole.ASSISTANT.value,
+            content=content,
+            sources=sources,
+        )

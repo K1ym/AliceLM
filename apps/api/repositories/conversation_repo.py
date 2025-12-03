@@ -60,6 +60,24 @@ class ConversationRepository(BaseRepository[Conversation]):
             self.db.commit()
             return True
         return False
+    
+    def update_title_and_timestamp(self, conversation: Conversation, title: str) -> None:
+        """更新对话标题和时间戳"""
+        from datetime import datetime
+        conversation.title = title
+        conversation.updated_at = datetime.utcnow()
+        self.db.commit()
+    
+    def update_compressed_context(
+        self,
+        conversation: Conversation,
+        compressed_context: str,
+        compressed_at_message_id: int,
+    ) -> None:
+        """更新压缩上下文"""
+        conversation.compressed_context = compressed_context
+        conversation.compressed_at_message_id = compressed_at_message_id
+        self.db.commit()
 
 
 class MessageRepository(BaseRepository[Message]):
@@ -89,12 +107,14 @@ class MessageRepository(BaseRepository[Message]):
         conversation_id: int,
         role: str,
         content: str,
+        sources: str = None,
     ) -> Message:
         """添加消息"""
         message = Message(
             conversation_id=conversation_id,
             role=role,
             content=content,
+            sources=sources,
         )
         self.db.add(message)
         self.db.commit()

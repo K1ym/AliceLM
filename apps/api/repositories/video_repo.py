@@ -41,7 +41,7 @@ class VideoRepository(BaseRepository[Video]):
             query = query.filter(Video.status == status)
         
         if folder_id:
-            query = query.filter(Video.folder_id == folder_id)
+            query = query.filter(Video.watched_folder_id == folder_id)
         
         if search:
             query = query.filter(Video.title.ilike(f"%{search}%"))
@@ -61,7 +61,7 @@ class VideoRepository(BaseRepository[Video]):
             query = query.filter(Video.status == status)
         
         if folder_id:
-            query = query.filter(Video.folder_id == folder_id)
+            query = query.filter(Video.watched_folder_id == folder_id)
         
         return query.count()
     
@@ -158,3 +158,44 @@ class VideoRepository(BaseRepository[Video]):
             .filter(Video.tenant_id == tenant_id, Video.status == VideoStatus.DONE.value)
             .all()
         )
+    
+    def get_recent_done(self, tenant_id: int, limit: int = 5) -> List[Video]:
+        """获取最近完成的视频"""
+        return (
+            self.db.query(Video)
+            .filter(Video.tenant_id == tenant_id, Video.status == VideoStatus.DONE.value)
+            .order_by(Video.processed_at.desc())
+            .limit(limit)
+            .all()
+        )
+    
+    def update_analysis(
+        self,
+        video_id: int,
+        summary: str = None,
+        key_points: str = None,
+        concepts: str = None,
+    ) -> Optional[Video]:
+        """更新视频分析结果"""
+        video = self.get(video_id)
+        if not video:
+            return None
+        
+        if summary is not None:
+            video.summary = summary
+        if key_points is not None:
+            video.key_points = key_points
+        if concepts is not None:
+            video.concepts = concepts
+        
+        self.db.commit()
+        self.db.refresh(video)
+        return video
+    
+    def reset_for_reprocess(self, video: Video) -> Video:
+        """重置视频状态以重新处理"""
+        video.status = VideoStatus.PENDING.value
+        video.error_message = None
+        self.db.commit()
+        self.db.refresh(video)
+        return video

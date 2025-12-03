@@ -1,4 +1,4 @@
-# BiLearner API 联调文档
+# AliceLM API 联调文档
 
 ## 概览
 
@@ -17,14 +17,14 @@
 ### 启动方式
 
 ```bash
-# 后端 API (端口 8000)
-cd bili2text-main
-source bili2text-venv/bin/activate
-uvicorn apps.api.main:app --reload --port 8000
+# Docker 方式（推荐）
+docker compose up -d
 
-# 前端 (端口 3000)
-cd apps/web
-pnpm dev
+# 或本地开发
+# 后端
+cd apps/api && uvicorn main:app --reload --port 8000
+# 前端
+cd apps/web && pnpm dev
 ```
 
 ### API 文档

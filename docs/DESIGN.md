@@ -1,4 +1,4 @@
-# 🏗️ Bili-Learner 技术设计文档
+# 🏗️ AliceLM 技术设计文档
 
 ---
 
@@ -136,7 +136,7 @@
 ### 2.2 目录结构
 
 ```
-bili-learner/
+AliceLM/
 ├── apps/
 │   ├── api/                    # FastAPI后端
 │   │   ├── main.py
@@ -511,7 +511,7 @@ class LearningRecord(Base):
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Bili-Learner                               │
+│                      AliceLM                                    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
@@ -574,7 +574,7 @@ class RAGFlowClient:
         """为租户创建知识库"""
         resp = await self.client.post("/api/v1/dataset", json={
             "name": f"tenant_{tenant_id}_{name}",
-            "description": f"Bili-Learner知识库 - 租户{tenant_id}",
+            "description": f"AliceLM知识库 - 租户{tenant_id}",
             "embedding_model": "BAAI/bge-large-zh-v1.5",
             "chunk_method": "naive",  # 或 "qa", "manual"
             "parser_config": {
@@ -1329,13 +1329,13 @@ class ASRManager:
 from mcp.server import Server
 from mcp.types import Tool, Resource
 
-class BiliLearnerMCPServer:
-    """Bili-Learner MCP Server"""
+class AliceLMMCPServer:
+    """AliceLM MCP Server"""
     
     def __init__(self, db: Session, qa_service: QAService):
         self.db = db
         self.qa = qa_service
-        self.server = Server("bili-learner")
+        self.server = Server("alice-lm")
         self._register_tools()
         self._register_resources()
     
@@ -1472,7 +1472,7 @@ class BiliLearnerMCPServer:
 # 启动脚本: python -m services.mcp
 if __name__ == "__main__":
     import asyncio
-    server = BiliLearnerMCPServer(db, qa_service)
+    server = AliceLMMCPServer(db, qa_service)
     asyncio.run(server.run())
 ```
 
@@ -1482,10 +1482,10 @@ if __name__ == "__main__":
 // ~/Library/Application Support/Claude/claude_desktop_config.json
 {
   "mcpServers": {
-    "bili-learner": {
+    "alice-lm": {
       "command": "python",
       "args": ["-m", "services.mcp"],
-      "cwd": "/path/to/bili-learner"
+      "cwd": "/path/to/AliceLM"
     }
   }
 }
