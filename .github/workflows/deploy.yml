@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   # 前端构建测试
   build-web:
@@ -52,59 +48,9 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v --ignore=tests/integration || true
 
-  # Docker 构建和推送 (仅 main 分支)
-  docker-build:
-    needs: [build-web, build-api]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 构建 API 镜像
-      - name: Build and push API image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.prod
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # 构建 Web 镜像
-      - name: Build and push Web image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/web
-          file: ./apps/web/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web:${{ github.sha }}
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.API_URL }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   # 部署到服务器
   deploy:
-    needs: docker-build
+    needs: [build-web, build-api]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -116,15 +62,17 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd /opt/alicelm
             
-            # 拉取最新镜像
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/api:latest
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web:latest
+            # 拉取代码
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/K1ym/AliceLM.git .
+            else
+              git pull
+            fi
             
-            # 更新 docker-compose 并重启
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --force-recreate
+            # 启动服务
+            docker compose -f docker-compose.prod.yml up -d --build
             
-            # 清理旧镜像
+            # 清理
             docker image prune -f
