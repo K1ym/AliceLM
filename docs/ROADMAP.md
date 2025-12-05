@@ -6,21 +6,35 @@
 
 ## 📊 当前进度
 
+### 轨道 1：系统基础 / Pipeline（历史）
 ```
-Phase 0: 基础设施   [██████████] 100% ✅ (8/8 任务完成)
-Phase 1: MVP核心    [██████████] 100% ✅ (12/12 任务完成)
-Phase 2: AI增强     [█████████░] 90% ✅ (13/14 任务完成)
-Phase 3: 多端集成   [██████████] 100% ✅ (11/11 任务完成)
-Phase 4: 知识网络   [██░░░░░░░░] 20% 🔄 进行中
+Phase 0–4: [██████████] 已交付（作为 Alice 的底座）
 ```
+- 状态：✅ 已完成基础闭环（收藏 → 转写 → 摘要 → RAG → Web/MCP）
+- 后续：只做维护 / 小改，不再拆新 Phase
+
+### 轨道 2：Alice One / Agent / OS（当前主线）
+```
+Stage S0: 代码结构对齐      [██████████] 100% ✅
+Stage S1: 时间线+身份       [██████████] 100% ✅
+Stage S2: AgentCore 骨架    [██████████] 100% ✅
+Stage S3: ToolRouter+本地工具 [██████████] 100% ✅
+Stage S4: Planner/Executor  [██████████] 100% ✅
+Stage S5: SearchAgent       [██████████] 100% ✅
+Stage S6: 通用工具包        [██████████] 100% ✅
+Stage S7: MCP Client        [██████████] 100% ✅
+Stage S8: 统一入口+Eval     [██████████] 100% ✅
+```
+**当前关注：轨道 2，正在推进 Stage S1 → S2 → S3。**
 
 **最后更新**: 2024-12-04  
-**当前阶段**: Phase 3 完成 ✅ → Phase 4 进行中  
-**已交付**: Web UI + API + MCP Server + 分层架构重构
+**已交付**: Web UI + API + MCP Server + 分层架构重构 + 目录骨架对齐 DESIGN
 
 ---
 
-## 1. 开发阶段总览
+## 1. 轨道 1：系统基础 / Pipeline 阶段总览（历史）
+
+> 已完成，用作历史记录与回溯，不再新增任务。
 
 ```
 Phase 0: 基础设施 (1周)
@@ -36,14 +50,14 @@ Phase 4: 知识网络 (2周)
 Phase 5: 生产就绪 (持续)
 ```
 
-| 阶段 | 目标 | 核心交付 | 预计时间 |
-|------|------|----------|----------|
-| **Phase 0** | 搭建基础设施 | 项目骨架、DB、配置系统 | 1周 |
-| **Phase 1** | 跑通核心闭环 | 收藏→转写→通知 | 2周 |
-| **Phase 2** | AI能力增强 | 摘要、问答、RAGFlow集成 | 2周 |
-| **Phase 3** | 多端接入 | Web UI、MCP Server | 2周 |
-| **Phase 4** | 知识网络 | 关联、图谱、学习追踪 | 2周 |
-| **Phase 5** | 生产就绪 | 多租户、监控、优化 | 持续 |
+| 阶段 | 目标 | 核心交付 | 状态 |
+|------|------|----------|------|
+| **Phase 0** | 搭建基础设施 | 项目骨架、DB、配置系统 | ✅ 完成 |
+| **Phase 1** | 跑通核心闭环 | 收藏→转写→通知 | ✅ 完成 |
+| **Phase 2** | AI能力增强 | 摘要、问答、RAGFlow集成 | ✅ 完成 |
+| **Phase 3** | 多端接入 | Web UI、MCP Server | ✅ 完成 |
+| **Phase 4** | 知识网络 | 关联、图谱、学习追踪 | ✅ 基本完成 |
+| **Phase 5** | 生产就绪 | 多租户、监控、优化 | 持续维护 |
 
 ---
 
@@ -614,6 +628,374 @@ Week 1        Week 2-3       Week 4-5       Week 6-7       Week 8-9
 
 ---
 
-*文档版本: v0.1*  
+## 10. 轨道 2：Alice One / Agent 执行路线（Claude 专用版）
+
+> 本节是写给 IDE 内的 AI 助手（如 Claude）的「执行顺序说明」。
+> 不考虑时间，只考虑每一次修改的：
+> - ✅ **健壮性**：改完系统要能跑；旧路径尽量兼容；
+> - ✅ **全面性**：每一步都在架构层面闭环，而不是半拉子；
+> - ✅ **依赖最优**：下一步工作只依赖前一步，不跨多处返工。
+
+---
+
+### 10.0 通用执行原则
+
+Claude 在执行本 Roadmap 任意一步时，都需要遵守：
+
+1. **以 DESIGN.md 为标准**
+   - 在修改任何模块前，先阅读 DESIGN.md 对应章节：
+     - 目录结构 / 分层设计
+     - AliceAgentCore / Strategy / SearchAgent / Tools 设计
+   - 不得发明与 DESIGN 不一致的架构或命名。
+
+2. **每一步是一个「可落地的稳定状态」**
+   - 完成一个 Stage 后：
+     - 所有核心功能必须可运行；
+     - 旧接口在新路径完全替换前不得直接删除，只能在内部重定向；
+     - 不产生「一半走新架构、一半走旧架构」又没有说明的状态。
+
+3. **DB / Schema 迁移必须向后兼容**
+   - 新增字段优先，少删除；
+   - 如需重构表结构，必须先增加 view / 兼容层，等新代码稳定后再做清理。
+
+4. **开源迁移一律走 third_party → alice 命名空间**
+   - 所有第三方 clone 到 `third_party/` 目录；
+   - 在业务代码中不得直接 `import third_party.*`，只能 copy + 改名 + 适配；
+   - 具体规则见 DESIGN.md 中的「开源代码迁移与内化规范」。
+
+---
+
+### Stage S0：代码结构与 DESIGN 对齐（基础对齐）✅
+
+**目标：**  
+确保当前仓库的目录结构 / 命名与 DESIGN.md 中的分层设计完全一致，为后续 Alice One / Agent 提供稳定地基。只整理结构，不改业务逻辑。
+
+**任务：**
+
+- [x] 校验并对齐目录结构（参考 DESIGN 的目录规划）
+  - 确保存在以下模块（如果没有就创建空目录和 `__init__.py`）：
+    - `alice/one/`：Alice One 层
+    - `alice/agent/`：Agent 引擎（AliceAgentCore / Strategy / Planner / Executor / ToolRouter）
+    - `alice/search/`：SearchAgent / SearchAgentService
+    - `services/`：watcher / processor / asr / ai / knowledge / mcp / notifier 等领域服务
+
+- [x] 创建未来模块的骨架文件（仅定义类/接口，占位）：
+  - `alice/agent/core.py`（AliceAgentCore）
+  - `alice/agent/strategy.py`（Strategy 基类 + Chat/Research/Timeline 占位）
+  - `alice/agent/task_planner.py`
+  - `alice/agent/tool_executor.py`
+  - `alice/agent/tool_router.py`
+  - `alice/search/search_agent.py`
+
+- [x] 确保这些改动不会影响现有 Web / Pipeline / RAG 功能的运行。
+
+**验收：**
+- 项目仍然可以正常运行现有功能；
+- 目录与命名和 DESIGN.md 保持一致。
+
+---
+
+### Stage S1：统一时间线与 Alice 身份（Timeline + Identity）✅
+
+**目标：**  
+先让系统具备统一 Timeline 与 Alice 租户人格视图，为未来的上下文构建打基础，不引入 Agent。
+
+**任务：**
+
+- [x] 实现 TimelineEvent 逻辑视图与存储：
+  - 定义事件模型（表或视图），字段包括：
+    - `event_type`，`scene`，`context`（JSON）；
+    - `tenant_id` / `user_id` / `created_at`。
+  - **已完成**：`packages/db/models.py` 新增 `TimelineEvent` / `EventType` / `SceneType` / `AgentRun` / `AgentStep`
+
+- [x] 实现 TimelineService（`alice/one/timeline.py`）：
+  - `append_event(tenant_id, user_id, event_type, scene, context)`；
+  - `list_events(tenant_id, user_id, filters...)`；
+  - `get_recent_summary(tenant_id, user_id, days)`；
+  - **已完成**：提供 `record_event()` 便捷函数
+
+- [ ] 改造当前 Watcher / Processor / QA / 周报等流程：
+  - 结束关键行为时调用 `TimelineService.append_event`，统一写入时间线。
+  - **待集成**：需要在各服务中调用 `record_event()`
+
+- [x] 实现 AliceIdentityService v1（`alice/one/identity.py`）：
+  - 从 TenantConfig 中读取 `alice.*` 命名空间配置；
+  - 输出：
+    - `system_prompt`（人格/语气）；
+    - `enabled_tools` / `tool_scopes` 等。
+  - **已完成**：支持 friendly/professional/coach 风格，按场景过滤工具
+
+- [x] 实现 ContextAssembler v1（`alice/one/context.py`）：
+  - **已完成**：骨架实现，待集成 RAG / Graph / Timeline
+
+**验收：**
+- 完成一次「处理新视频→问答→周报」后，在 Timeline 中能看到对应的事件链；
+- 对不同 tenant，AliceIdentityService 输出的人设配置不同。
+
+---
+
+### Stage S2：AliceAgentCore 骨架 + AgentTask 统一入口 ✅
+
+**目标：**  
+实现 AliceAgentCore 的最小骨架与 AgentTask / AgentResult 类型，让新旧入口逐步过渡到统一 AgentCore，但暂时不引入复杂工具和 Planner。
+
+**任务：**
+
+- [x] 定义核心数据结构（放在 `alice/agent/types.py` 或类似文件）：
+  - `AgentTask`：包含 tenant_id, scene, query, 以及可选的 user_id, video_id, extra_context 等；
+  - `AgentResult`：包含 answer, citations, steps 等；
+  - 可以先定义简化版 AgentPlan / AgentStep。
+  - **已完成**：S0 已实现
+
+- [x] 实现 StrategySelector（`alice/agent/strategy.py`）：
+  - 根据 AgentTask.scene 选择 ChatStrategy / ResearchStrategy / TimelineStrategy，暂不做复杂意图识别。
+  - **已完成**：S0 已实现
+
+- [x] 实现 `AliceAgentCore.run_task(task: AgentTask)` 的最小版本（`alice/agent/core.py`）：
+  - 使用 AliceIdentityService 构造 persona；
+  - 使用简单的 ContextAssembler（可为占位）构造上下文 messages；
+  - 调用现有 `services/ai` 的 LLM 接口（暂不启用 tools）；
+  - 返回 AgentResult。
+  - **已完成**：完整实现 5 步流程（策略选择 → Identity → Context → Messages → LLM）
+
+- [x] 新增 Agent 入口 API（例如 `/api/agent/chat`）：
+  - 构造 AgentTask → 调用 AliceAgentCore；
+  - 原 `/api/chat` 暂时保持旧逻辑，只在内部增加一个选项允许走新 Agent 路径（feature flag）。
+  - **已完成**：`apps/api/routers/agent.py` + 注册到 main.py
+  - API 端点：`/api/v1/agent/chat`、`/api/v1/agent/strategies`、`/api/v1/agent/scenes`
+
+**验收：**
+- 通过 `/api/agent/chat` 能拿到与旧 `/api/chat` 质量相近的回答；
+- 日志中可看到结构化的 AgentTask / AgentResult。
+
+---
+
+### Stage S3：ToolRouter + 本地基础工具（不含开源迁移）✅
+
+**目标：**  
+在 AgentCore 下接入最小的本地工具系统，为后续 Planner / SearchAgent / 开源工具迁移提供稳定的 Tool 层。
+
+**任务：**
+
+- [x] 实现 ToolRouter（`alice/agent/tool_router.py`）：
+  - `list_tool_schemas(allowed_tools)` 返回当前场景/策略可用的工具 schema；
+  - `execute(tool_name, args)` 负责调用对应工具；
+  - `execute_safe(tool_name, args)` 安全执行（捕获异常）；
+  - `create_with_basic_tools(db)` 工厂方法。
+  - **已完成**
+
+- [x] 定义 AliceTool 抽象基类：
+  - `name`, `description`, `parameters`（JSON Schema）；
+  - `async def run(self, args) -> Any`；
+  - `to_schema()` 转换为 OpenAI function calling 格式。
+  - **已完成**：S0 已实现，S3 完善
+
+- [x] 实现一批简单本地工具（无需第三方）：
+  - 放在 `alice/agent/tools/basic.py`：
+    - `echo`（调试）；
+    - `current_time`（支持 human/iso/timestamp 格式）；
+    - `sleep`（最大 10 秒）；
+    - `get_timeline_summary`（调用 TimelineService）；
+    - `get_video_summary`（调用现有服务）；
+    - `search_videos`（简单标题搜索）。
+  - **已完成**：6 个基础工具
+
+- [x] 在 `AliceAgentCore.run_task` 调 LLM 时，附带 tools schema，但不强制 LLM 必须调用工具。
+  - **已完成**：`_call_llm_with_tools()` + 工具执行 + 结果追加
+
+**验收：**
+- 至少有 1–2 个基础工具能被 LLM 调用并正确返回结果；
+- 工具调用失败时不会导致整个请求崩溃。
+
+---
+
+### Stage S4：引入 Planner / Executor 内核（OpenManus 范式迁移）✅
+
+**目标：**  
+让 Agent 从「单轮 LLM + 可选工具」升级到「多步 Plan → Tool → Observe → 再 Plan」的 ReAct 流程，先在本地工具场景验证。
+
+**任务：**
+
+- [x] 按 DESIGN 9.3 的迁移规范，从 OpenManus 拷贝并改写 Planner / Executor 逻辑：
+  - 在 `third_party/openmanus` clone 官方仓库；
+    - **已完成**：`https://github.com/FoundationAgents/OpenManus`
+  - 在 `alice/agent/task_planner.py` 实现 TaskPlanner：
+    - 接受 AgentTask + Context，输出 AgentPlan（step 列表）；
+    - **已完成**：迁移自 OpenManus `app/flow/planning.py`
+    - 新增 `PlanStepStatus` 枚举、计划存储、步骤标记
+  - 在 `alice/agent/tool_executor.py` 实现 ToolExecutor：
+    - 根据 AgentPlan 驱动 ReAct 循环：thought → tool_call → observation → next thought；
+    - **已完成**：迁移自 OpenManus `app/agent/toolcall.py`
+    - 新增 `AgentState` 枚举、特殊工具处理、cleanup()
+
+- [x] 将 AliceAgentCore 切换为使用新的 Planner + Executor：
+  - 所有 Agent 路径（Chat / Library / Video / Graph 等）都走：Strategy → Planner → Executor → ToolRouter。
+  - **已完成**：S2 已集成基础流程，S4 完善 Planner/Executor
+
+- [x] 为 AgentRun 记录 Plan / Steps，用于调试和后续 Eval。
+  - **已完成**：`TaskPlanner.plans` 存储计划，`AgentStep` 记录执行步骤
+
+**验收：**
+- 至少一个任务展示了多步执行（例如「先看 timeline，再看两个视频，再总结」）；
+- 日志中可以看到 Plan 和每一步的 tool 调用。
+
+---
+
+### Stage S5：SearchAgent + 深度 Web 搜索 ✅
+
+**目标：**  
+引入深度 Web 搜索能力，让 ResearchStrategy 在需要查外部世界时有一套独立的 SearchAgentService。
+
+**任务：**
+
+- [x] 在 `third_party/mindsearch` clone 官方仓库
+  - **已完成**：`https://github.com/InternLM/MindSearch`
+
+- [x] 实现 SearchAgentService：
+  - `alice/search/search_agent.py`：
+    - `_interpret_query()` - 规范化/增强问题
+    - `_decompose_query()` - 生成子查询（规则 + LLM）
+    - `_search_single_query()` - 多路搜索
+    - `_fetch_and_analyze()` - 正文抽取（预留）
+    - `_aggregate_sources()` - 去重/排序/截断
+    - `_synthesize_answer()` - 综合回答
+  - `alice/search/http_client.py`：
+    - `SearchProvider` 抽象基类
+    - `TavilySearchProvider` / `DuckDuckGoSearchProvider` / `MockSearchProvider`
+
+- [x] 在 Tool 层暴露 `deep_web_research`：
+  - `alice/agent/tools/search_tools.py`：`DeepWebResearchTool`
+  - `ToolRouter.create_with_all_tools()` 注册
+
+- [x] 在 ResearchStrategy 中启用该 Tool
+  - `allowed_tools` 包含 `deep_web_research`
+  - system prompt 指导使用时机
+
+**验收：**
+- [x] 45 个测试全部通过
+- [x] SearchAgentService.run() 返回 sources > 0
+- [x] answer 字段非空
+
+---
+
+### Stage S6：通用 Web / HTTP 工具包 ✅
+
+**目标：**  
+利用 strands-agents/tools 扩充 Web / HTTP / 计算工具，实现高质量的通用 Tool 包。
+
+**任务：**
+
+- [x] 在 `third_party/strands_agents_tools` clone 官方仓库
+  - **已完成**：`https://github.com/strands-agents/tools`
+
+- [x] 在 `alice/agent/tools/ext/` 下实现工具模块：
+  - `basic.py`：CalculatorTool, CurrentTimeTool, SleepTool, EnvironmentTool, JournalTool
+  - `files.py`：FileReadTool, FileWriteTool（安全目录限制）
+  - `http_web.py`：HttpRequestTool, TavilySearchTool, TavilyExtractTool, ExaSearchTool, ExaGetContentsTool
+  - `rss_cron.py`：RssTool, CronTool
+  - `unsafe.py`：ShellTool, PythonReplTool, BrowserControlTool 等（默认不注册）
+
+- [x] 在 ToolRouter 中新增 `create_with_ext_tools()` 方法
+
+- [x] 安全控制：
+  - FileReadTool/FileWriteTool 限制安全目录
+  - HttpRequestTool 阻止内部地址访问
+  - 高危工具需 `ALICE_UNSAFE_TOOLS_ENABLED=true` 才能注册
+
+**验收：**
+- [x] 55 个测试全部通过
+- [x] calculator 支持安全的数学表达式计算
+- [x] 高风险工具默认不注册
+
+---
+
+### Stage S7：MCP Client + 外部工具集成 ✅
+
+**目标：**  
+统一本地工具与外部 MCP 工具的调用方式，为未来扩展 Notion / GitHub 等外部服务打通通路。
+
+**任务：**
+
+- [x] 在 `third_party/gemini_cli` clone 官方仓库
+  - **已完成**：`https://github.com/google-gemini/gemini-cli`
+
+- [x] 在 `alice/agent/mcp_client.py` 实现 MCP Client：
+  - `McpClient` - JSON-RPC 2.0 客户端
+  - `McpRegistry` - 多端点管理
+  - `MockMcpClient` - 测试用 Mock 实现
+  - `McpToolResult` / `McpToolDescription` - 数据结构
+
+- [x] 在 ToolRouter 中增加 MCP 工具支持：
+  - `McpBackedTool` - MCP 工具包装为 AliceTool
+  - `create_with_mcp()` - 创建包含 MCP 的 Router
+  - `list_tool_schemas` 合并本地 + MCP 工具
+  - `execute` 统一调用本地和 MCP 工具
+
+- [x] 安全机制：
+  - MCP 工具名与本地工具冲突时跳过
+  - 默认无 MCP 配置时不报错
+
+**验收：**
+- [x] 65 个测试全部通过
+- [x] ToolRouter 能列出并调用 MCP 工具
+- [x] Mock MCP 工具可正常执行
+
+---
+
+### Stage S8：统一入口 + Eval / Console / 权限基础 ✅
+
+**目标：**  
+把所有主要入口统一到 `AliceAgentCore.run_task()`，并补上观测 / 回归 / 权限控制。
+
+**任务：**
+
+- [x] **统一入口适配层**：
+  - `alice/one/entrypoints.py`：
+    - `handle_chat_request()` - 通用 Chat 入口
+    - `handle_qa_request()` - QA/知识库入口
+    - `handle_video_chat_request()` - 视频问答入口
+    - `handle_console_request()` - Console/Admin 入口
+  - `/api/agent/chat` 已走 AliceAgentCore 路径
+
+- [x] **Eval 基础设施**（`alice/eval/`）：
+  - `models.py`：EvalCase, EvalSuite, EvalResult, EvalSuiteResult
+  - `runner.py`：EvalRunner, get_default_suite()
+  - `scorers.py`：SimpleScorer（规则评分）, LLMScorer（LLM 评分）
+
+- [x] **Console API**（`apps/api/routers/console.py`）：
+  - `GET /console/agent-runs` - 执行日志列表
+  - `GET /console/agent-runs/{id}` - 执行详情
+  - `GET /console/agent-runs/stats` - 统计信息
+  - `POST /console/eval/run-suite` - 运行 Eval 套件
+  - `GET /console/tools` - 工具列表
+
+- [x] **权限与工具可见性**（`alice/agent/permissions.py`）：
+  - `ToolVisibilityPolicy` - 工具可见性策略
+  - `UserRole` - 用户角色枚举
+  - 场景 × 角色 × 工具分类矩阵控制
+  - 高危工具默认禁用
+
+- [x] **Agent Run Logger**（`alice/agent/run_logger.py`）：
+  - `AgentRunLogger` - 执行日志记录器
+  - 支持内存和文件两种存储方式
+
+**验收：**
+- [x] 77 个测试全部通过
+- [x] 普通用户无法访问 shell/python_repl
+- [x] Admin + enable_unsafe 可访问高危工具
+
+---
+
+### Stage S9+：协作 / 插件生态（远期方向）
+
+**目标：**  
+不在当前迭代锁死实现细节，只确定方向与边界。
+
+- **协作能力**：多人共享 Plan / Board / Timeline 视图；对共享对象的权限控制。
+- **插件生态**：对外公开 Tool 定义与 MCP 接入规范，让第三方可以为 Alice One 写工具。
+
+---
+
+*文档版本: v0.8*  
 *创建日期: 2024-12-01*
-*最后更新: 2024-12-01*
+*最后更新: 2024-12-04*

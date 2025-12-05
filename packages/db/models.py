@@ -255,7 +255,7 @@ class WatchedFolder(Base):
 
 
 class LearningRecord(Base):
-    """学习记录"""
+    """学习记录（旧表，保留兼容）"""
     __tablename__ = "learning_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -269,6 +269,151 @@ class LearningRecord(Base):
     extra_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON额外数据
 
     user: Mapped["User"] = relationship("User", back_populates="learning_records")
+
+
+# ============== Timeline 系统 ==============
+
+class EventType(enum.Enum):
+    """时间线事件类型"""
+    # 视频相关
+    VIDEO_ADDED = "video_added"           # 新视频入库
+    VIDEO_PROCESSED = "video_processed"   # 视频处理完成
+    VIDEO_VIEWED = "video_viewed"         # 用户观看
+    
+    # 问答相关
+    QUESTION_ASKED = "question_asked"     # 用户提问
+    ANSWER_RECEIVED = "answer_received"   # 收到回答
+    
+    # 学习相关
+    REVIEW_SCHEDULED = "review_scheduled" # 复习提醒
+    REVIEW_COMPLETED = "review_completed" # 完成复习
+    
+    # 报告相关
+    REPORT_GENERATED = "report_generated" # 生成报告/周报
+    
+    # 知识图谱相关
+    CONCEPT_LEARNED = "concept_learned"   # 学到新概念
+    CONCEPT_LINKED = "concept_linked"     # 概念关联
+    
+    # Agent 相关
+    AGENT_RUN = "agent_run"               # Agent 执行任务
+    TOOL_CALLED = "tool_called"           # 工具被调用
+    
+    # 系统相关
+    USER_LOGIN = "user_login"             # 用户登录
+    CONFIG_CHANGED = "config_changed"     # 配置变更
+
+
+class SceneType(enum.Enum):
+    """事件发生的场景"""
+    CHAT = "chat"
+    LIBRARY = "library"
+    VIDEO = "video"
+    GRAPH = "graph"
+    TIMELINE = "timeline"
+    TASKS = "tasks"
+    CONSOLE = "console"
+    SETTINGS = "settings"
+    WECHAT = "wechat"
+    MCP = "mcp"
+    SYSTEM = "system"  # 后台任务
+
+
+class TimelineEvent(Base):
+    """
+    统一时间线事件
+    
+    演进自 LearningRecord，增加 event_type / scene / context 字段，
+    用于记录系统中所有重要事件，供 Alice One 构建用户画像和上下文。
+    """
+    __tablename__ = "timeline_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    
+    # 事件类型与场景
+    event_type: Mapped[EventType] = mapped_column(Enum(EventType), index=True)
+    scene: Mapped[SceneType] = mapped_column(Enum(SceneType), index=True)
+    
+    # 关联实体（可选）
+    video_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("videos.id"), nullable=True, index=True)
+    conversation_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("conversations.id"), nullable=True)
+    
+    # 事件内容
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # 事件简述
+    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)       # JSON: 详细上下文
+    
+    # 时间
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_timeline_tenant_user_time", "tenant_id", "user_id", "created_at"),
+        Index("ix_timeline_tenant_type_time", "tenant_id", "event_type", "created_at"),
+    )
+
+
+# ============== Agent 执行记录 ==============
+
+class AgentRunStatus(enum.Enum):
+    """Agent 运行状态"""
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentRun(Base):
+    """Agent 运行记录"""
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    
+    # 任务信息
+    scene: Mapped[str] = mapped_column(String(50))
+    query: Mapped[str] = mapped_column(Text)
+    strategy: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    
+    # 状态
+    status: Mapped[AgentRunStatus] = mapped_column(Enum(AgentRunStatus), default=AgentRunStatus.RUNNING)
+    
+    # 结果
+    answer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    citations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Token 使用
+    prompt_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # 时间
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    # 关系
+    steps: Mapped[List["AgentStep"]] = relationship("AgentStep", back_populates="run", order_by="AgentStep.step_idx")
+
+
+class AgentStep(Base):
+    """Agent 执行步骤"""
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    
+    step_idx: Mapped[int] = mapped_column(Integer)
+    thought: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tool_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tool_args: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
+    observation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # 关系
+    run: Mapped["AgentRun"] = relationship("AgentRun", back_populates="steps")
 
 
 # ============== 对话系统 ==============
