@@ -16,3 +16,13 @@
 - `/api/v1/auth/logout` 仅返回消息，未记录或吊销现有 Token；JWT 在到期前始终有效。【F:apps/api/routers/auth.py†L44-L130】
 - 账户被盗或密码修改后，旧 Token 仍可继续访问，无法满足安全注销或主动失效要求。
 - 建议：引入 Token 黑名单/版本号（如 `token_version` 字段）并在验证时检查，或将有效期缩短并结合刷新令牌流程。
+
+### 4. 全局 B 站 SESSDATA 兜底导致凭证泄露
+- `FolderService._resolve_sessdata` 在用户未绑定 B 站账号时回退到全局配置 `config.bilibili.sessdata`，所有租户/用户的收藏夹扫描都会复用该 Cookie。【F:apps/api/services/folder_service.py†L42-L70】
+- 任何普通用户都能间接使用该共享凭证访问配置者的 B 站收藏夹，等同于把主账号的会话暴露给全体用户。
+- 建议：移除全局 SESSDATA 兜底，强制用户绑定自己的会话；如需运维账号，应按租户隔离且限制可见范围，并对凭证做最小化权限和轮换。
+
+### 5. 停用账号仍可登录和访问
+- 登录与鉴权流程未检查 `user.is_active`，`AuthService.authenticate` 和 `get_current_user` 对被停用账户仍返回成功结果。【F:apps/api/services/auth_service.py†L50-L68】【F:apps/api/deps.py†L36-L88】
+- 被封禁或停用的用户依旧可以凭旧密码或 Token 继续访问接口，管理员无法即时阻断访问。
+- 建议：在登录前、刷新 Token 和每次取当前用户时检查 `is_active`，对不活跃账号返回 403/401 并记录审计日志。
