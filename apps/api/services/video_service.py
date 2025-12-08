@@ -55,27 +55,28 @@ class VideoService:
             (Video, is_new): 视频对象和是否为新创建
         """
         bvid = await self.parse_bvid(url)
-        
+
         # 检查是否已存在
-        existing = self.repo.get_by_bvid(tenant.id, bvid)
+        existing = self.repo.get_by_source(tenant.id, "bilibili", bvid)
         if existing:
             return existing, False
-        
+
         # 获取视频信息
         video_info = await self._fetch_video_info(bvid)
-        
+
         # 创建视频记录
         video = self.repo.create(
             tenant_id=tenant.id,
-            bvid=bvid,
+            source_type="bilibili",
+            source_id=bvid,
             title=video_info.get("title", bvid),
             author=video_info.get("owner", {}).get("name", ""),
             cover_url=video_info.get("pic", ""),
             duration=video_info.get("duration", 0),
             status=VideoStatus.PENDING if auto_process else VideoStatus.IMPORTED,
         )
-        
-        logger.info("video_imported", video_id=video.id, bvid=bvid)
+
+        logger.info("video_imported", video_id=video.id, source_id=bvid)
         
         return video, True
     

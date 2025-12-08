@@ -76,7 +76,8 @@ class ChangePasswordRequest(BaseModel):
 
 class VideoBase(BaseModel):
     """视频基础信息"""
-    bvid: str
+    source_type: str = "bilibili"
+    source_id: str
     title: str
     author: Optional[str] = None
     duration: Optional[int] = None
@@ -110,7 +111,8 @@ class VideoDetail(VideoSummary):
 
 class VideoTranscript(BaseModel):
     """视频转写文本"""
-    bvid: str
+    source_type: str
+    source_id: str
     title: str
     transcript: str
     segments: Optional[List[dict]] = None

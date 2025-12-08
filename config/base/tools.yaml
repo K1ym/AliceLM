@@ -33,13 +33,7 @@ tools:
     enabled: true
     scenes: ["chat", "video"]
     description: "针对特定视频提问"
-
-  - name: search_knowledge_graph
-    impl: alice.agent.tools.basic.SearchGraphTool
-    enabled: true
-    scenes: ["chat", "graph", "research"]
-    description: "搜索知识图谱"
-
+    
   # ========== 搜索工具 ==========
   - name: web_search
     impl: alice.agent.tools.search.WebSearchTool

@@ -17,11 +17,15 @@ class VideoRepository(BaseRepository[Video]):
     def __init__(self, db: Session):
         super().__init__(db, Video)
     
-    def get_by_bvid(self, tenant_id: int, bvid: str) -> Optional[Video]:
-        """根据BV号获取视频"""
+    def get_by_source(self, tenant_id: int, source_type: str, source_id: str) -> Optional[Video]:
+        """根据内容源获取视频"""
         return (
             self.db.query(Video)
-            .filter(Video.tenant_id == tenant_id, Video.source_id == bvid)
+            .filter(
+                Video.tenant_id == tenant_id,
+                Video.source_type == source_type,
+                Video.source_id == source_id,
+            )
             .first()
         )
     
