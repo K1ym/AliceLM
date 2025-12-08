@@ -22,39 +22,9 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
-# ReAct 循环的系统提示模板
-REACT_SYSTEM_PROMPT = """你是一个智能助手，可以通过调用工具来完成任务。
-
-## 执行计划
-{plan}
-
-## 可用工具
-{tools}
-
-## 回复格式
-每次回复必须是以下格式之一：
-
-1. 调用工具时：
-```json
-{{"thought": "我的思考过程...", "action": "工具名", "action_input": {{"参数名": "参数值"}}}}
-```
-
-2. 给出最终答案时：
-```json
-{{"thought": "我的思考过程...", "final_answer": "最终回答内容"}}
-```
-
-注意：只输出 JSON，不要有其他内容。"""
-
-# 下一步提示模板
-NEXT_STEP_PROMPT = """用户问题：{query}
-
-{observations}
-
-基于当前状态，决定下一步行动：
-1. 如果需要更多信息，调用合适的工具
-2. 如果已有足够信息，给出最终答案
-3. 如果任务已完成，使用 final_answer"""
+# Prompt keys (从 ControlPlane 获取)
+REACT_SYSTEM_PROMPT_KEY = "alice.agent.react_system"
+REACT_NEXT_PROMPT_KEY = "alice.agent.react_next"
 
 
 class ToolExecutor:
@@ -385,6 +355,14 @@ class ToolExecutor:
         context: Optional[dict],
     ) -> List[Dict[str, str]]:
         """构建 ReAct 循环的消息"""
+        from alice.control_plane import get_control_plane
+        
+        cp = get_control_plane()
+        
+        # 从 ControlPlane 获取 prompt
+        react_system_template = cp.get_prompt_sync(REACT_SYSTEM_PROMPT_KEY)
+        react_next_template = cp.get_prompt_sync(REACT_NEXT_PROMPT_KEY)
+        
         # 格式化计划
         plan_text = "\n".join([f"{i+1}. {s}" for i, s in enumerate(plan.steps)])
         
@@ -392,7 +370,7 @@ class ToolExecutor:
         tools_text = self._format_tools_for_prompt(tool_schemas)
         
         # 系统提示
-        system_content = base_system_prompt + "\n\n" + REACT_SYSTEM_PROMPT.format(
+        system_content = base_system_prompt + "\n\n" + react_system_template.format(
             plan=plan_text,
             tools=tools_text,
         )
@@ -407,7 +385,7 @@ class ToolExecutor:
         
         # 用户消息 + 观察结果
         obs_text = "\n".join(observations) if observations else "（尚无观察结果）"
-        user_content = NEXT_STEP_PROMPT.format(
+        user_content = react_next_template.format(
             query=query,
             observations=obs_text,
         )

@@ -1,0 +1,12 @@
+# 生产环境配置
+# 覆盖 base/ 中的默认值
+
+debug: false
+
+# 生产环境数据库
+# database:
+#   url: postgresql://user:pass@host/db
+
+# 生产环境 LLM
+# llm:
+#   model: gpt-4o

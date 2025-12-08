@@ -14,15 +14,36 @@
 
 ## 端点概览
 
+### 视频 CRUD
+
 | Method | Endpoint | 说明 |
 |--------|----------|------|
 | GET | `/api/v1/videos` | 获取视频列表 |
 | GET | `/api/v1/videos/{id}` | 获取视频详情 |
 | GET | `/api/v1/videos/{id}/transcript` | 获取转写文本 |
 | POST | `/api/v1/videos` | 导入视频 |
-| POST | `/api/v1/videos/{id}/reprocess` | 重新处理 |
+| POST | `/api/v1/videos/batch` | 批量导入视频 |
 | DELETE | `/api/v1/videos/{id}` | 删除视频 |
+
+### 处理队列
+
+| Method | Endpoint | 说明 |
+|--------|----------|------|
+| GET | `/api/v1/videos/queue/list` | 获取处理队列 |
+| GET | `/api/v1/videos/queue/info` | 获取队列信息 |
+| POST | `/api/v1/videos/{id}/process` | 开始处理 |
+| POST | `/api/v1/videos/{id}/reprocess` | 重新处理 |
+| GET | `/api/v1/videos/{id}/status` | 获取处理状态 |
+| POST | `/api/v1/videos/{id}/cancel` | 取消处理 |
+| DELETE | `/api/v1/videos/{id}/queue` | 从队列移除 |
+
+### 统计 & 其他
+
+| Method | Endpoint | 说明 |
+|--------|----------|------|
 | GET | `/api/v1/videos/stats/summary` | 获取统计 |
+| GET | `/api/v1/videos/stats/tags` | 获取标签统计 |
+| GET | `/api/v1/videos/{id}/comments` | 获取B站评论 |
 
 ---
 
@@ -307,3 +328,201 @@ function OpenInBilibili({ bvid, startTime }: { bvid: string; startTime?: number 
     </a>
   );
 }
+
+---
+
+## 新增端点详情
+
+### POST /api/v1/videos/batch
+
+批量导入视频（最多 20 个）。
+
+**请求:**
+
+```json
+["BV1xx411c7mD", "BV2yy222c8mE", "BV3zz333d9nF"]
+```
+
+**响应:**
+
+```json
+{
+  "total": 3,
+  "success": 2,
+  "results": [
+    {"url": "BV1xx411c7mD", "success": true, "data": {...}},
+    {"url": "BV2yy222c8mE", "success": true, "data": {...}},
+    {"url": "BV3zz333d9nF", "success": false, "error": "视频不存在"}
+  ]
+}
+```
+
+---
+
+### GET /api/v1/videos/queue/list
+
+获取处理队列状态。
+
+**响应:**
+
+```json
+{
+  "queue": [
+    {"id": 1, "bvid": "BV...", "title": "...", "status": "processing"}
+  ],
+  "failed": [
+    {"id": 2, "bvid": "BV...", "title": "...", "status": "failed", "error_message": "下载失败"}
+  ],
+  "recent_done": [...],
+  "queue_count": 5,
+  "failed_count": 1,
+  "parallel_queue": {
+    "max_workers": 3,
+    "current_workers": 2,
+    "queue_size": 3
+  }
+}
+```
+
+---
+
+### GET /api/v1/videos/queue/info
+
+获取并行处理队列信息。
+
+**响应:**
+
+```json
+{
+  "max_workers": 3,
+  "current_workers": 2,
+  "queue_size": 5,
+  "processing": ["video_1", "video_2"]
+}
+```
+
+---
+
+### POST /api/v1/videos/{id}/process
+
+立即开始处理视频。
+
+**响应:**
+
+```json
+{
+  "message": "已加入处理队列",
+  "video_id": 123,
+  "status": "processing",
+  "queue": {...}
+}
+```
+
+---
+
+### GET /api/v1/videos/{id}/status
+
+获取视频处理状态。
+
+**响应:**
+
+```json
+{
+  "id": 123,
+  "status": "processing",
+  "error_message": null,
+  "has_transcript": false,
+  "has_summary": false
+}
+```
+
+---
+
+### POST /api/v1/videos/{id}/cancel
+
+取消视频处理。
+
+**响应:**
+
+```json
+{
+  "message": "已取消处理",
+  "video_id": 123,
+  "old_status": "processing",
+  "new_status": "pending"
+}
+```
+
+---
+
+### DELETE /api/v1/videos/{id}/queue
+
+从队列中移除视频（仅限 pending/failed 状态）。
+
+**响应:**
+
+```json
+{
+  "message": "已从队列移除",
+  "video_id": 123
+}
+```
+
+---
+
+### GET /api/v1/videos/stats/tags
+
+获取 Top 标签统计。
+
+**请求参数:**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| limit | int | 否 | 返回数量，默认 5，最大 20 |
+
+**响应:**
+
+```json
+{
+  "tags": [
+    {"name": "设计", "count": 15},
+    {"name": "产品", "count": 12},
+    {"name": "技术", "count": 8}
+  ],
+  "total_tags": 3
+}
+```
+
+---
+
+### GET /api/v1/videos/{id}/comments
+
+获取视频的 B 站评论。
+
+**请求参数:**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| page | int | 否 | 页码，默认 1 |
+| page_size | int | 否 | 每页数量，默认 20，最大 50 |
+
+**响应:**
+
+```json
+{
+  "comments": [
+    {
+      "id": 12345678,
+      "content": "讲得很好！",
+      "username": "用户名",
+      "avatar": "https://...",
+      "like_count": 100,
+      "reply_count": 5,
+      "created_at": 1701734400
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "has_more": true
+}
+```

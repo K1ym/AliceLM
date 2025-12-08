@@ -87,9 +87,19 @@ class Summarizer:
         初始化摘要生成器
         
         Args:
-            llm_manager: LLM管理器实例
+            llm_manager: LLM管理器实例（如果不提供，从 ControlPlane 获取）
         """
-        self.llm = llm_manager or LLMManager()
+        if llm_manager is not None:
+            self.llm = llm_manager
+        else:
+            # 从 ControlPlane 获取带缓存的 LLM
+            try:
+                from alice.control_plane import get_control_plane
+                cp = get_control_plane()
+                self.llm = cp.create_llm_for_task_sync("summary")
+            except Exception:
+                # 回退到默认
+                self.llm = LLMManager()
 
     def analyze(
         self,
@@ -99,21 +109,10 @@ class Summarizer:
         duration: int = 0,
     ) -> VideoAnalysis:
         """
-        分析视频内容
-        
-        Args:
-            transcript: 转写文本
-            title: 视频标题
-            author: 作者
-            duration: 时长（秒）
-            
-        Returns:
-            VideoAnalysis对象
+        同步分析视频内容
         """
-        # 限制转写文本长度（避免超出token限制）
         max_chars = 15000
         if len(transcript) > max_chars:
-            # 取前后各一半
             half = max_chars // 2
             transcript = transcript[:half] + "\n...[中间内容省略]...\n" + transcript[-half:]
 
@@ -124,37 +123,60 @@ class Summarizer:
             transcript=transcript,
         )
         
-        # 从 ControlPlane 获取 prompt
         system_prompt = _get_summary_prompt()
-
         messages = [
             Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
 
-        logger.info(
-            "summarizing",
-            title=title,
-            transcript_length=len(transcript),
-        )
+        logger.info("summarizing", title=title, transcript_length=len(transcript))
 
         try:
             response = self.llm.chat(messages, temperature=0.3)
-            
-            # 解析JSON响应
             result = self._parse_response(response.content)
-            
-            logger.info(
-                "summarize_complete",
-                title=title,
-                summary_length=len(result.summary),
-                key_points_count=len(result.key_points),
-            )
-
+            logger.info("summarize_complete", title=title, summary_length=len(result.summary))
             return result
-
         except Exception as e:
             logger.error("summarize_failed", title=title, error=str(e))
+            raise
+
+    async def analyze_async(
+        self,
+        transcript: str,
+        title: str = "",
+        author: str = "",
+        duration: int = 0,
+    ) -> VideoAnalysis:
+        """
+        异步分析视频内容
+        """
+        max_chars = 15000
+        if len(transcript) > max_chars:
+            half = max_chars // 2
+            transcript = transcript[:half] + "\n...[中间内容省略]...\n" + transcript[-half:]
+
+        user_prompt = USER_PROMPT_TEMPLATE.format(
+            title=title or "未知",
+            author=author or "未知",
+            duration=duration // 60 if duration else 0,
+            transcript=transcript,
+        )
+        
+        system_prompt = _get_summary_prompt()
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=user_prompt),
+        ]
+
+        logger.info("summarizing_async", title=title, transcript_length=len(transcript))
+
+        try:
+            response = await self.llm.chat_async(messages, temperature=0.3)
+            result = self._parse_response(response.content)
+            logger.info("summarize_async_complete", title=title, summary_length=len(result.summary))
+            return result
+        except Exception as e:
+            logger.error("summarize_async_failed", title=title, error=str(e))
             raise
 
     def _parse_response(self, content: str) -> VideoAnalysis:

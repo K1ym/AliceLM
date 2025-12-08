@@ -87,9 +87,19 @@ class Tagger:
         初始化标签分类器
         
         Args:
-            llm_manager: LLM管理器实例
+            llm_manager: LLM管理器实例（如果不提供，从 ControlPlane 获取）
         """
-        self.llm = llm_manager or LLMManager()
+        if llm_manager is not None:
+            self.llm = llm_manager
+        else:
+            # 从 ControlPlane 获取带缓存的 LLM
+            try:
+                from alice.control_plane import get_control_plane
+                cp = get_control_plane()
+                self.llm = cp.create_llm_for_task_sync("tagger")
+            except Exception:
+                # 回退到默认
+                self.llm = LLMManager()
 
     def analyze(
         self,
@@ -97,26 +107,14 @@ class Tagger:
         summary: Optional[str] = None,
         transcript_preview: Optional[str] = None,
     ) -> TagResult:
-        """
-        分析并生成标签
-        
-        Args:
-            title: 视频标题
-            summary: 摘要（可选）
-            transcript_preview: 转写预览（可选）
-            
-        Returns:
-            TagResult对象
-        """
+        """同步分析并生成标签"""
         content = f"标题：{title}"
         if summary:
             content += f"\n\n摘要：{summary}"
         if transcript_preview:
             content += f"\n\n内容预览：{transcript_preview[:1000]}"
         
-        # 从 ControlPlane 获取 prompt
         system_prompt = _get_tagger_prompt()
-
         messages = [
             Message(role="system", content=system_prompt),
             Message(role="user", content=content),
@@ -127,25 +125,41 @@ class Tagger:
         try:
             response = self.llm.chat(messages, temperature=0.2)
             result = self._parse_response(response.content)
-            
-            logger.info(
-                "tagging_complete",
-                title=title,
-                category=result.category,
-                tags=result.tags,
-            )
-
+            logger.info("tagging_complete", title=title, category=result.category)
             return result
-
         except Exception as e:
             logger.error("tagging_failed", title=title, error=str(e))
-            # 返回默认结果
-            return TagResult(
-                tags=[],
-                category="其他",
-                concepts=[],
-                confidence=0.0,
-            )
+            return TagResult(tags=[], category="其他", concepts=[], confidence=0.0)
+
+    async def analyze_async(
+        self,
+        title: str,
+        summary: Optional[str] = None,
+        transcript_preview: Optional[str] = None,
+    ) -> TagResult:
+        """异步分析并生成标签"""
+        content = f"标题：{title}"
+        if summary:
+            content += f"\n\n摘要：{summary}"
+        if transcript_preview:
+            content += f"\n\n内容预览：{transcript_preview[:1000]}"
+        
+        system_prompt = _get_tagger_prompt()
+        messages = [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=content),
+        ]
+
+        logger.info("tagging_async", title=title)
+
+        try:
+            response = await self.llm.chat_async(messages, temperature=0.2)
+            result = self._parse_response(response.content)
+            logger.info("tagging_async_complete", title=title, category=result.category)
+            return result
+        except Exception as e:
+            logger.error("tagging_async_failed", title=title, error=str(e))
+            return TagResult(tags=[], category="其他", concepts=[], confidence=0.0)
 
     def _parse_response(self, content: str) -> TagResult:
         """解析LLM响应"""

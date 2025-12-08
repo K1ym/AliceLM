@@ -58,6 +58,7 @@ class OpenAIProvider(LLMProvider):
         self.base_url = base_url or config.llm.base_url or "https://api.openai.com/v1"
         
         self._client = None
+        self._async_client = None
         
         logger.debug(
             "llm_provider_init",
@@ -67,18 +68,30 @@ class OpenAIProvider(LLMProvider):
         )
 
     def _get_client(self):
-        """延迟初始化客户端"""
+        """延迟初始化同步客户端"""
         if self._client is None:
             from openai import OpenAI
             import httpx
             
-            # 思考模型可能需要更长时间，设置较长超时
             self._client = OpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
-                timeout=httpx.Timeout(300.0, connect=30.0),  # 5分钟超时
+                timeout=httpx.Timeout(300.0, connect=30.0),
             )
         return self._client
+    
+    def _get_async_client(self):
+        """延迟初始化异步客户端"""
+        if self._async_client is None:
+            from openai import AsyncOpenAI
+            import httpx
+            
+            self._async_client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=httpx.Timeout(300.0, connect=30.0),
+            )
+        return self._async_client
 
     def chat(
         self,
@@ -87,10 +100,23 @@ class OpenAIProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> LLMResponse:
-        """聊天补全"""
+        """聊天补全（带重试）"""
+        return self._chat_with_retry(messages, temperature, max_tokens, **kwargs)
+    
+    def _chat_with_retry(
+        self,
+        messages: List[Message],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        max_attempts: int = 3,
+        **kwargs,
+    ) -> LLMResponse:
+        """带重试的聊天补全"""
+        from alice.errors import LLMConnectionError, LLMResponseError, RateLimitError
+        from packages.retry import RetryExhaustedError
+        import time
+        
         client = self._get_client()
-
-        # 转换消息格式
         api_messages = [
             {"role": msg.role, "content": msg.content}
             for msg in messages
@@ -103,38 +129,150 @@ class OpenAIProvider(LLMProvider):
             messages_count=len(messages),
         )
 
-        try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=api_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=api_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
 
-            result = LLMResponse(
-                content=response.choices[0].message.content,
-                model=response.model,
-                usage={
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                },
-                finish_reason=response.choices[0].finish_reason,
-            )
+                result = LLMResponse(
+                    content=response.choices[0].message.content,
+                    model=response.model,
+                    usage={
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                    },
+                    finish_reason=response.choices[0].finish_reason,
+                )
 
-            logger.info(
-                "llm_response",
-                provider=self.name,
-                model=self.model,
-                tokens=result.usage.get("total_tokens", 0),
-            )
+                logger.info(
+                    "llm_response",
+                    provider=self.name,
+                    model=self.model,
+                    tokens=result.usage.get("total_tokens", 0),
+                )
 
-            return result
+                return result
 
-        except Exception as e:
-            logger.error("llm_error", provider=self.name, error=str(e))
-            raise
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                # 判断是否可重试
+                is_retryable = any(kw in error_str for kw in [
+                    "timeout", "connection", "rate limit", "429", "503", "502"
+                ])
+                
+                if not is_retryable or attempt >= max_attempts:
+                    logger.error("llm_error", provider=self.name, error=str(e), attempt=attempt)
+                    if "rate limit" in error_str or "429" in error_str:
+                        raise RateLimitError(str(e))
+                    elif any(kw in error_str for kw in ["timeout", "connection"]):
+                        raise LLMConnectionError(str(e))
+                    else:
+                        raise LLMResponseError(str(e)) from e
+                
+                # 重试
+                wait = min(2 ** (attempt - 1), 30)
+                logger.warning(f"Retrying LLM call, attempt {attempt}, wait {wait}s", extra={"error": str(e)})
+                time.sleep(wait)
+        
+        raise LLMConnectionError(f"Failed after {max_attempts} attempts: {last_error}")
+
+    async def chat_async(
+        self,
+        messages: List[Message],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        """异步聊天补全（带重试）"""
+        return await self._chat_async_with_retry(messages, temperature, max_tokens, **kwargs)
+    
+    async def _chat_async_with_retry(
+        self,
+        messages: List[Message],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        max_attempts: int = 3,
+        **kwargs,
+    ) -> LLMResponse:
+        """带重试的异步聊天补全"""
+        from alice.errors import LLMConnectionError, LLMResponseError, RateLimitError
+        import asyncio
+        
+        client = self._get_async_client()
+        api_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+        ]
+
+        logger.info(
+            "llm_async_request",
+            provider=self.name,
+            model=self.model,
+            messages_count=len(messages),
+        )
+
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=api_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
+
+                result = LLMResponse(
+                    content=response.choices[0].message.content,
+                    model=response.model,
+                    usage={
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                    },
+                    finish_reason=response.choices[0].finish_reason,
+                )
+
+                logger.info(
+                    "llm_async_response",
+                    provider=self.name,
+                    model=self.model,
+                    tokens=result.usage.get("total_tokens", 0),
+                )
+
+                return result
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                
+                is_retryable = any(kw in error_str for kw in [
+                    "timeout", "connection", "rate limit", "429", "503", "502"
+                ])
+                
+                if not is_retryable or attempt >= max_attempts:
+                    logger.error("llm_async_error", provider=self.name, error=str(e), attempt=attempt)
+                    if "rate limit" in error_str or "429" in error_str:
+                        raise RateLimitError(str(e))
+                    elif any(kw in error_str for kw in ["timeout", "connection"]):
+                        raise LLMConnectionError(str(e))
+                    else:
+                        raise LLMResponseError(str(e)) from e
+                
+                wait = min(2 ** (attempt - 1), 30)
+                logger.warning(f"Retrying async LLM call, attempt {attempt}, wait {wait}s")
+                await asyncio.sleep(wait)
+        
+        raise LLMConnectionError(f"Failed after {max_attempts} attempts: {last_error}")
 
     def chat_stream(
         self,

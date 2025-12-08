@@ -364,7 +364,11 @@ class TestAliceControlPlane:
         """测试便捷方法"""
         from alice.control_plane import AliceControlPlane
         
-        (tmp_path / "models.yaml").write_text("""
+        # 配置需要放在 base/ 子目录
+        base_path = tmp_path / "base"
+        base_path.mkdir()
+        
+        (base_path / "models.yaml").write_text("""
 model_profiles:
   test.chat:
     kind: chat
@@ -373,11 +377,11 @@ model_profiles:
 task_defaults:
   chat: test.chat
 """)
-        (tmp_path / "prompts.yaml").write_text("""
+        (base_path / "prompts.yaml").write_text("""
 prompts:
   test.system: "You are a test assistant."
 """)
-        (tmp_path / "tools.yaml").write_text("""
+        (base_path / "tools.yaml").write_text("""
 tools:
   - name: calculator
     impl: test.Calc
@@ -385,7 +389,7 @@ tools:
 scene_defaults:
   chat: ["calculator"]
 """)
-        (tmp_path / "services.yaml").write_text("services: {}\nproviders: {}")
+        (base_path / "services.yaml").write_text("services: {}\nproviders: {}")
         
         cp = AliceControlPlane.from_config(str(tmp_path))
         

@@ -1,6 +1,6 @@
 from .llm import LLMManager, LLMProvider, Message, LLMResponse
 from .summarizer import Summarizer, VideoAnalysis
-from .rag import RAGService, RAGFlowClient, SearchResult
+from alice.rag import RAGService, RAGFlowClient, SearchResult
 from .tagger import Tagger, TagResult
 from .recommender import Recommender, Recommendation
 

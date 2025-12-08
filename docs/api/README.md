@@ -75,12 +75,36 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ## API 端点详情
 
-详见:
-- [Videos API](./VIDEOS.md) - 视频CRUD、转写
-- [QA API](./QA.md) - 知识库问答、语义搜索
-- [Folders API](./FOLDERS.md) - 收藏夹管理
-- [Config API](./CONFIG.md) - 配置管理 (ASR/LLM/通知)
-- [ControlPlane API](./CONTROL_PLANE.md) - 模型/工具/Prompt 配置
+### 核心 API
+
+| 文档 | 描述 |
+|------|------|
+| [Auth API](./AUTH.md) | 用户认证、登录、注册 |
+| [Videos API](./VIDEOS.md) | 视频 CRUD、转写、处理队列 |
+| [Conversations API](./CONVERSATIONS.md) | 对话管理、流式消息 |
+| [QA API](./QA.md) | 知识库问答、语义搜索 |
+
+### Agent & 智能
+
+| 文档 | 描述 |
+|------|------|
+| [Agent API](./AGENT.md) | Agent 对话、策略、场景 |
+| [Knowledge API](./KNOWLEDGE.md) | 知识图谱、学习统计 |
+
+### 配置 & 管理
+
+| 文档 | 描述 |
+|------|------|
+| [Config API](./CONFIG.md) | ASR/LLM/通知配置 |
+| [ControlPlane API](./CONTROL_PLANE.md) | 模型/工具/Prompt 配置 |
+| [Folders API](./FOLDERS.md) | 收藏夹管理 |
+
+### B站 & 开发者
+
+| 文档 | 描述 |
+|------|------|
+| [Bilibili API](./BILIBILI.md) | B站账号绑定、收藏夹 |
+| [Console API](./CONSOLE.md) | Agent 执行日志、Eval 评测 |
 
 ## 功能完成度
 

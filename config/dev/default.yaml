@@ -1,0 +1,9 @@
+# 开发环境配置
+# 覆盖 base/ 中的默认值
+
+# 开发环境使用更详细的日志
+debug: true
+
+# 可以覆盖 LLM 配置
+# llm:
+#   model: gpt-4o-mini

@@ -15,8 +15,11 @@ logger = get_logger(__name__)
 DEFAULT_CONTEXT_THRESHOLD = 20000  # 字符数阈值，超过则触发压缩
 DEFAULT_KEEP_RECENT = 6  # 保留最近N条消息不压缩
 
+# Prompt key
+CONTEXT_COMPRESS_PROMPT_KEY = "alice.task.context_compress"
 
-COMPRESS_SYSTEM_PROMPT = """你是一个对话历史压缩助手。你的任务是将一段对话历史压缩成简洁的摘要，保留关键信息。
+# Fallback prompt（当 ControlPlane 不可用时）
+_FALLBACK_COMPRESS_PROMPT = """你是一个对话历史压缩助手。你的任务是将一段对话历史压缩成简洁的摘要，保留关键信息。
 
 要求：
 1. 保留对话中的关键信息、重要结论、用户的偏好和需求
@@ -25,14 +28,21 @@ COMPRESS_SYSTEM_PROMPT = """你是一个对话历史压缩助手。你的任务�
 4. 压缩后的内容应该能让后续对话无缝衔接
 5. 控制在500-1000字以内
 
-输出格式：
 直接输出压缩后的对话摘要，不需要其他格式。"""
 
-COMPRESS_USER_PROMPT = """请压缩以下对话历史：
 
-{conversation}
-
-请输出压缩后的摘要："""
+def _get_compress_prompt() -> str:
+    """获取压缩 prompt（通过 ControlPlane）"""
+    try:
+        from alice.control_plane import get_control_plane
+        cp = get_control_plane()
+        prompt = cp.get_prompt_sync(CONTEXT_COMPRESS_PROMPT_KEY)
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+    
+    return _FALLBACK_COMPRESS_PROMPT
 
 
 @dataclass
@@ -122,9 +132,12 @@ class ContextCompressor:
 
         # 调用LLM压缩
         try:
+            system_prompt = _get_compress_prompt()
+            user_content = f"请压缩以下对话历史：\n\n{conversation_text}\n\n请输出压缩后的摘要："
+            
             llm_messages = [
-                Message(role="system", content=COMPRESS_SYSTEM_PROMPT),
-                Message(role="user", content=COMPRESS_USER_PROMPT.format(conversation=conversation_text)),
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=user_content),
             ]
             
             response = self.llm.chat(llm_messages, temperature=0.3)

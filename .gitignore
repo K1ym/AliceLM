@@ -209,3 +209,4 @@ Thumbs.db
 alicelm-venv/
 *.local
 third_party/
+config/local/

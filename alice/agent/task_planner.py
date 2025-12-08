@@ -19,44 +19,9 @@ from .types import AgentTask, AgentPlan, PlanStepState
 logger = logging.getLogger(__name__)
 
 
-# 规划系统提示
-PLANNING_SYSTEM_PROMPT = """你是一个专业的任务规划助手，负责将复杂任务分解为清晰、可执行的步骤。
-
-你的工作是：
-1. 分析请求，理解任务范围
-2. 创建清晰、可操作的计划
-3. 关注关键里程碑，而非过于详细的子步骤
-4. 考虑步骤间的依赖关系
-
-注意事项：
-- 将任务分解为逻辑步骤，每步都有明确的成果
-- 避免过度细节化
-- 当任务简单时，返回单步计划
-"""
-
-PLANNING_USER_PROMPT = """## 可用工具
-{tools_description}
-
-## 用户请求
-{query}
-
-## 任务
-请为这个请求创建一个合理的执行计划。
-
-## 输出格式
-只输出 JSON 对象，包含以下字段：
-{{
-    "title": "计划标题",
-    "steps": ["步骤1", "步骤2", "步骤3"]
-}}
-
-如果是简单问题，只需一步即可：
-{{
-    "title": "直接回答",
-    "steps": ["直接回答用户问题"]
-}}
-
-请输出："""
+# Prompt keys (从 ControlPlane 获取)
+PLANNER_SYSTEM_PROMPT_KEY = "alice.agent.planner_system"
+PLANNER_USER_PROMPT_KEY = "alice.agent.planner_user"
 
 
 class TaskPlanner:
@@ -203,19 +168,24 @@ class TaskPlanner:
         """
         from alice.control_plane import get_control_plane
         
+        cp = get_control_plane()
+        
+        # 从 ControlPlane 获取 prompt
+        system_prompt = cp.get_prompt_sync(PLANNER_SYSTEM_PROMPT_KEY)
+        user_prompt_template = cp.get_prompt_sync(PLANNER_USER_PROMPT_KEY)
+        
         # 构建工具描述
         tools_desc = self._format_tools_description(available_tools)
         
         # 构建 prompt
-        user_prompt = PLANNING_USER_PROMPT.format(
+        user_prompt = user_prompt_template.format(
             tools_description=tools_desc,
             query=query,
         )
         
-        cp = get_control_plane()
         llm = cp.create_llm_for_task_sync("chat")
         response = llm.chat([
-            {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ])
         

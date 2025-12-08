@@ -50,6 +50,8 @@ class AliceControlPlane:
         self.tools = tools
         self.services = services
         self._config_service = config_service
+        # LLM 实例缓存 (task_type -> LLMManager)
+        self._llm_cache: dict = {}
         logger.info("AliceControlPlane initialized")
     
     @classmethod
@@ -67,19 +69,22 @@ class AliceControlPlane:
         """
         config_path = Path(config_dir)
         
+        # 从 base/ 目录加载配置
+        base_path = config_path / "base"
+        
         models = ModelRegistry.from_yaml(
-            str(config_path / "models.yaml"),
+            str(base_path / "models.yaml"),
             config_service,
         )
         prompts = PromptStore.from_yaml(
-            str(config_path / "prompts.yaml"),
+            str(base_path / "prompts.yaml"),
             config_service,
         )
         tools = ToolRegistry.from_yaml(
-            str(config_path / "tools.yaml"),
+            str(base_path / "tools.yaml"),
         )
         services = ServiceFactory.from_yaml(
-            str(config_path / "services.yaml"),
+            str(base_path / "services.yaml"),
         )
         
         return cls(models, prompts, tools, services, config_service)
@@ -134,9 +139,10 @@ class AliceControlPlane:
         task_type: str,
         tenant_id: Optional[int] = None,
         user_id: Optional[int] = None,
+        use_cache: bool = True,
     ) -> Any:
         """
-        为指定任务创建 LLM 实例
+        为指定任务创建 LLM 实例（带缓存）
         
         统一的 LLM 创建入口，替代散落的 create_llm_from_config/LLMManager() 调用
         
@@ -144,23 +150,35 @@ class AliceControlPlane:
             task_type: 任务类型 (chat/summary/embedding/asr/...)
             tenant_id: 租户 ID
             user_id: 用户 ID
+            use_cache: 是否使用缓存（默认 True）
             
         Returns:
             LLMManager 实例
         """
         from services.ai.llm import LLMManager, create_llm_from_config
         
+        # 构建缓存 key
+        cache_key = f"{task_type}:{tenant_id or 0}:{user_id or 0}"
+        
+        if use_cache and cache_key in self._llm_cache:
+            return self._llm_cache[cache_key]
+        
         resolved = await self.resolve_model(task_type, tenant_id, user_id)
         
         if resolved.base_url and resolved.api_key:
-            return create_llm_from_config(
+            llm = create_llm_from_config(
                 base_url=resolved.base_url,
                 api_key=resolved.api_key,
                 model=resolved.model,
             )
         else:
             # 回退到默认 LLMManager
-            return LLMManager()
+            llm = LLMManager()
+        
+        if use_cache:
+            self._llm_cache[cache_key] = llm
+        
+        return llm
     
     def create_llm_for_task_sync(
         self,

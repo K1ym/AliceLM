@@ -88,8 +88,8 @@ class Settings(BaseSettings):
     )
 
 
-def load_yaml_config(config_path: str = "config/default.yaml") -> dict[str, Any]:
-    """加载YAML配置文件"""
+def load_yaml_config(config_path: str) -> dict[str, Any]:
+    """加载单个YAML配置文件"""
     path = Path(config_path)
     if path.exists():
         with open(path, "r", encoding="utf-8") as f:
@@ -97,14 +97,49 @@ def load_yaml_config(config_path: str = "config/default.yaml") -> dict[str, Any]
     return {}
 
 
-def get_settings(config_path: Optional[str] = None) -> Settings:
-    """获取配置实例，支持YAML + ENV"""
-    # 加载YAML配置
-    yaml_config = {}
-    if config_path:
-        yaml_config = load_yaml_config(config_path)
-    elif Path("config/default.yaml").exists():
-        yaml_config = load_yaml_config("config/default.yaml")
+def deep_merge(base: dict, override: dict) -> dict:
+    """深度合并配置字典"""
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_layered_config(config_dir: str = "config", env: Optional[str] = None) -> dict[str, Any]:
+    """
+    分层加载配置
+    
+    加载顺序: base → {env} → local → 环境变量
+    后加载的覆盖先加载的
+    
+    Args:
+        config_dir: 配置目录
+        env: 环境名称 (dev/prod)，默认从 ALICE_ENV 读取
+    """
+    config_path = Path(config_dir)
+    env = env or os.getenv("ALICE_ENV", "dev")
+    
+    # 1. 加载 base 配置
+    config = load_yaml_config(config_path / "base" / "default.yaml")
+    
+    # 2. 加载环境配置
+    env_config = load_yaml_config(config_path / env / "default.yaml")
+    config = deep_merge(config, env_config)
+    
+    # 3. 加载 local 配置（不提交到 git）
+    local_config = load_yaml_config(config_path / "local" / "default.yaml")
+    config = deep_merge(config, local_config)
+    
+    return config
+
+
+def get_settings(config_dir: str = "config", env: Optional[str] = None) -> Settings:
+    """获取配置实例，支持分层YAML + ENV"""
+    # 加载分层配置
+    yaml_config = load_layered_config(config_dir, env)
     
     # 创建Settings实例（环境变量会自动覆盖）
     return Settings(**yaml_config)
@@ -120,3 +155,10 @@ def get_config() -> Settings:
     if _settings is None:
         _settings = get_settings()
     return _settings
+
+
+def reset_config():
+    """重置配置（用于测试）"""
+    global _settings
+    _settings = None
+

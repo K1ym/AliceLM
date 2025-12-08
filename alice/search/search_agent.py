@@ -45,35 +45,11 @@ class SearchAgentResult:
 
 
 # ============================================================
-# Prompt 模板
+# Prompt keys (从 ControlPlane 获取)
 # ============================================================
 
-QUERY_DECOMPOSE_PROMPT = """你是一个搜索查询专家。请将用户的复杂问题拆解为 1-3 个更具体的搜索子查询。
-
-规则：
-1. 如果问题简单直接，只返回 1 个查询
-2. 如果问题涉及对比、多个方面、或需要多步信息，拆解为 2-3 个子查询
-3. 每个子查询应该独立、具体、适合搜索引擎
-4. 返回 JSON 格式：["查询1", "查询2", ...]
-
-用户问题：{query}
-
-请输出子查询列表（JSON 数组）："""
-
-ANSWER_SYNTHESIS_PROMPT = """你是一个研究助手，需要基于搜索结果回答用户问题。
-
-规则：
-1. 只使用提供的搜索结果中的信息
-2. 引用来源时使用 [[n]] 格式标注
-3. 如果搜索结果不足以回答问题，诚实说明
-4. 回答应该全面、有条理
-
-用户问题：{query}
-
-搜索结果：
-{sources}
-
-请基于以上搜索结果，给出详细回答："""
+QUERY_DECOMPOSE_PROMPT_KEY = "alice.search.query_decompose"
+ANSWER_SYNTHESIS_PROMPT_KEY = "alice.search.answer_synthesis"
 
 
 class SearchAgentService:
@@ -194,7 +170,8 @@ class SearchAgentService:
             
             cp = get_control_plane()
             llm = cp.create_llm_for_task_sync("chat")
-            prompt = QUERY_DECOMPOSE_PROMPT.format(query=query)
+            prompt_template = cp.get_prompt_sync(QUERY_DECOMPOSE_PROMPT_KEY)
+            prompt = prompt_template.format(query=query)
             response = llm.chat([{"role": "user", "content": prompt}])
             
             # 解析 JSON
@@ -293,7 +270,8 @@ class SearchAgentService:
             
             cp = get_control_plane()
             llm = cp.create_llm_for_task_sync("chat")
-            prompt = ANSWER_SYNTHESIS_PROMPT.format(
+            prompt_template = cp.get_prompt_sync(ANSWER_SYNTHESIS_PROMPT_KEY)
+            prompt = prompt_template.format(
                 query=query,
                 sources=sources_text,
             )

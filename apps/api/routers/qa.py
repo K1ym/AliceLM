@@ -55,7 +55,7 @@ async def ask_question(
     # 检查服务可用性
     if not rag.is_available():
         # 降级到简单模式
-        from services.ai.rag.service import FallbackRAGService
+        from alice.rag import FallbackRAGService
         rag = FallbackRAGService(db)
     
     try:
@@ -102,7 +102,7 @@ async def search_videos(
     
     # 检查服务可用性
     if not rag.is_available():
-        from services.ai.rag.service import FallbackRAGService
+        from alice.rag import FallbackRAGService
         rag = FallbackRAGService(db)
     
     try:

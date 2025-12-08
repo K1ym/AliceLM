@@ -114,9 +114,19 @@ class LLMManager:
         provider: Optional[str] = None,
         **kwargs,
     ) -> LLMResponse:
-        """聊天补全"""
+        """同步聊天补全"""
         llm = self.get_provider(provider)
         return llm.chat(messages, **kwargs)
+    
+    async def chat_async(
+        self,
+        messages: list,
+        provider: Optional[str] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        """异步聊天补全"""
+        llm = self.get_provider(provider)
+        return await llm.chat_async(messages, **kwargs)
 
     def chat_stream(
         self,
