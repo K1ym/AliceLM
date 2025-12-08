@@ -53,7 +53,7 @@ class FolderScanner:
                 # 检查是否已存在
                 exists = db.query(Video).filter(
                     Video.tenant_id == self.tenant_id,
-                    Video.bvid == video_info.bvid,
+                    Video.source_id == video_info.source_id,
                 ).first()
 
                 if exists:
@@ -66,13 +66,13 @@ class FolderScanner:
                 video = Video(
                     tenant_id=self.tenant_id,
                     watched_folder_id=folder.id,
-                    bvid=video_info.bvid,
+                    bvid=video_info.source_id,
                     title=video_info.title,
                     author=video_info.author,
                     duration=video_info.duration,
                     cover_url=video_info.cover_url,
                     source_type="bilibili",
-                    source_url=f"https://www.bilibili.com/video/{video_info.bvid}",
+                    source_url=f"https://www.bilibili.com/video/{video_info.source_id}",
                     status=VideoStatus.PENDING.value,
                     collected_at=datetime.utcnow(),
                 )

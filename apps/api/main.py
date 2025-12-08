@@ -13,7 +13,7 @@ from packages.config import get_config
 from packages.db import init_db
 from packages.logging import get_logger
 
-from .routers import videos, qa, auth, folders, knowledge, config as config_router, bilibili, conversations, system, suggestions, agent
+from .routers import videos, qa, auth, folders, knowledge, config as config_router, bilibili, conversations, system, suggestions, agent, console, control_plane
 from .error_handlers import register_exception_handlers
 
 logger = get_logger(__name__)
@@ -81,6 +81,8 @@ app.include_router(conversations.router, prefix="/api/v1", tags=["对话"])
 app.include_router(system.router, prefix="/api/v1/system", tags=["系统管理"])
 app.include_router(suggestions.router, prefix="/api/v1/suggestions", tags=["灵感建议"])
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
+app.include_router(console.router, prefix="/api/v1/console", tags=["Console"])
+app.include_router(control_plane.router, prefix="/api/v1/control-plane", tags=["ControlPlane"])
 
 
 @app.get("/health")

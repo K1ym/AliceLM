@@ -1,0 +1,57 @@
+## Learn more about Gemini CLI’s tools
+
+Section titled “Learn more about Gemini CLI’s tools”
+Gemini CLI’s built-in tools can be broadly categorized as follows:
+- [File System Tools](https://geminicli.com/docs/tools/file-system): For interacting with files and
+directories (reading, writing, listing, searching, etc.).
+- [Shell Tool](https://geminicli.com/docs/tools/shell) (run_shell_command): For executing shell
+commands.
+- [Web Fetch Tool](https://geminicli.com/docs/tools/web-fetch) (web_fetch): For retrieving content
+from URLs.
+- [Web Search Tool](https://geminicli.com/docs/tools/web-search) (google_web_search): For searching
+the web.
+- [Memory Tool](https://geminicli.com/docs/tools/memory) (save_memory): For saving and recalling
+information across sessions.
+- [Todo Tool](https://geminicli.com/docs/tools/todos) (write_todos): For managing subtasks of complex
+requests.
+[File System Tools](https://geminicli.com/docs/tools/file-system)
+[Shell Tool](https://geminicli.com/docs/tools/shell)
+
+```
+run_shell_command
+```
+
+[Web Fetch Tool](https://geminicli.com/docs/tools/web-fetch)
+
+```
+web_fetch
+```
+
+[Web Search Tool](https://geminicli.com/docs/tools/web-search)
+
+```
+google_web_search
+```
+
+[Memory Tool](https://geminicli.com/docs/tools/memory)
+
+```
+save_memory
+```
+
+[Todo Tool](https://geminicli.com/docs/tools/todos)
+
+```
+write_todos
+```
+
+Additionally, these tools incorporate:
+- [MCP servers](https://geminicli.com/docs/tools/mcp-server): MCP servers act as a bridge between the
+Gemini model and your local environment or other services like APIs.
+- [Sandboxing](https://geminicli.com/docs/cli/sandbox): Sandboxing isolates the model and its
+changes from your environment to reduce potential risk.
+[MCP servers](https://geminicli.com/docs/tools/mcp-server)
+[Sandboxing](https://geminicli.com/docs/cli/sandbox)
+[cookies](https://policies.google.com/technologies/cookies)
+[Terms](https://geminicli.com/terms)
+[Privacy](https://policies.google.com/privacy)

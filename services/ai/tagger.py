@@ -36,7 +36,8 @@ CATEGORIES = [
 ]
 
 
-SYSTEM_PROMPT = f"""你是一个专业的内容分类助手。根据视频标题和摘要，为视频打标签和分类。
+# 回退 prompt
+_FALLBACK_TAGGER_PROMPT = f"""你是一个专业的内容分类助手。根据视频标题和摘要，为视频打标签和分类。
 
 可选分类: {", ".join(CATEGORIES)}
 
@@ -47,12 +48,35 @@ SYSTEM_PROMPT = f"""你是一个专业的内容分类助手。根据视频标题
     "concepts": ["概念1", "概念2"]
 }}
 
-要求：
-1. category: 从可选分类中选择最匹配的一个
-2. tags: 2-5个标签，用于描述视频内容主题
-3. concepts: 视频中的核心概念或专业术语（1-3个）
+只输出JSON。"""
 
-只输出JSON，不要有其他内容。"""
+
+def _get_tagger_prompt() -> str:
+    """获取标签 prompt（通过 ControlPlane）"""
+    try:
+        from alice.control_plane import get_control_plane
+        cp = get_control_plane()
+        prompt = cp.get_prompt_sync("tagger")
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+    
+    return _FALLBACK_TAGGER_PROMPT
+
+
+def _get_tagger_concepts_prompt() -> str:
+    """获取概念提取 prompt"""
+    try:
+        from alice.control_plane import get_control_plane
+        cp = get_control_plane()
+        prompt = cp.get_prompt_sync("tagger_concepts")
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+    
+    return "你是一个专业的概念提取助手。"
 
 
 class Tagger:
@@ -89,9 +113,12 @@ class Tagger:
             content += f"\n\n摘要：{summary}"
         if transcript_preview:
             content += f"\n\n内容预览：{transcript_preview[:1000]}"
+        
+        # 从 ControlPlane 获取 prompt
+        system_prompt = _get_tagger_prompt()
 
         messages = [
-            Message(role="system", content=SYSTEM_PROMPT),
+            Message(role="system", content=system_prompt),
             Message(role="user", content=content),
         ]
 
@@ -169,10 +196,13 @@ class Tagger:
 {transcript[:5000]}
 
 概念："""
+        
+        # 从 ControlPlane 获取 prompt
+        system_prompt = _get_tagger_concepts_prompt()
 
         response = self.llm.complete(
             prompt,
-            system_prompt="你是一个专业的概念提取助手。",
+            system_prompt=system_prompt,
             temperature=0.2,
         )
         

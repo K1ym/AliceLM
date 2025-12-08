@@ -13,7 +13,7 @@ Phase 0–4: [██████████] 已交付（作为 Alice 的底座
 - 状态：✅ 已完成基础闭环（收藏 → 转写 → 摘要 → RAG → Web/MCP）
 - 后续：只做维护 / 小改，不再拆新 Phase
 
-### 轨道 2：Alice One / Agent / OS（当前主线）
+### 轨道 2：Alice One / Agent / OS ✅ 已完成
 ```
 Stage S0: 代码结构对齐      [██████████] 100% ✅
 Stage S1: 时间线+身份       [██████████] 100% ✅
@@ -25,10 +25,32 @@ Stage S6: 通用工具包        [██████████] 100% ✅
 Stage S7: MCP Client        [██████████] 100% ✅
 Stage S8: 统一入口+Eval     [██████████] 100% ✅
 ```
-**当前关注：轨道 2，正在推进 Stage S1 → S2 → S3。**
 
-**最后更新**: 2024-12-04  
-**已交付**: Web UI + API + MCP Server + 分层架构重构 + 目录骨架对齐 DESIGN
+### 轨道 3：ControlPlane 重构 ✅ 已完成
+```
+CP-01: 控制平面核心组件     [██████████] 100% ✅
+CP-02: Model/LLM 全面接入   [██████████] 100% ✅
+CP-03: Prompt 体系迁移      [██████████] 100% ✅
+CP-04: Tool 体系接入        [██████████] 100% ✅
+CP-05: ControlPlane HTTP API [██████████] 100% ✅
+```
+**已交付**:
+- `alice/control_plane/` 四大组件（ModelRegistry, PromptStore, ToolRegistry, ServiceFactory）
+- 配置中心化：`config/models.yaml`, `config/prompts.yaml`, `config/tools.yaml`, `config/services.yaml`
+- 业务全面接入：7 处 LLM 替换、5 处 Prompt 替换、2 处 Tool 替换
+- HTTP API：`/api/v1/control-plane/*` 5 个端点
+- 测试覆盖：234 passed
+
+### 轨道 4：下一步方向（规划中）
+```
+Next-01: Eval & Console 可视化    [░░░░░░░░░░] 0%
+Next-02: Alice 成长轨迹视图       [░░░░░░░░░░] 0%
+Next-03: 前端 neweb 接入          [░░░░░░░░░░] 0%
+Next-04: 协作 / 多用户            [░░░░░░░░░░] 0%
+```
+
+**最后更新**: 2024-12-05  
+**已交付**: Web UI + API + MCP Server + Agent 全架构 + ControlPlane v1
 
 ---
 

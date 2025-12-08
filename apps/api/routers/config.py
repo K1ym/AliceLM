@@ -782,14 +782,20 @@ async def get_prompts(
     
     返回用户自定义的prompt，以及所有默认prompt供参考
     """
-    from services.ai.prompts import DEFAULT_PROMPTS, PROMPT_DESCRIPTIONS, STRUCTURED_PROMPTS, FREE_PROMPTS
+    from services.ai.prompts import PROMPT_DESCRIPTIONS, STRUCTURED_PROMPTS, FREE_PROMPTS
+    from alice.control_plane import get_control_plane
     
     # 获取用户自定义prompt
     user_prompts = get_config_dict(db, user.id, "custom_prompts") or {}
     
+    # 从 PromptStore 获取默认 prompt（使用老 key 保持 API 兼容）
+    cp = get_control_plane()
+    prompt_keys = ["chat", "summary", "tagger", "knowledge", "mindmap", "context_compress"]
+    defaults = {key: cp.get_prompt_sync(key) for key in prompt_keys}
+    
     return PromptsResponse(
         prompts=user_prompts,
-        defaults=DEFAULT_PROMPTS,
+        defaults=defaults,
         descriptions=PROMPT_DESCRIPTIONS,
         structured=list(STRUCTURED_PROMPTS),
         free=list(FREE_PROMPTS),
@@ -808,9 +814,7 @@ async def update_prompt(
     
     prompt_type: chat, summary, tagger, knowledge, mindmap, context_compress
     """
-    from services.ai.prompts import DEFAULT_PROMPTS
-    
-    valid_types = list(DEFAULT_PROMPTS.keys())
+    valid_types = ["chat", "summary", "tagger", "knowledge", "mindmap", "context_compress"]
     if prompt_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"无效的prompt类型，支持: {valid_types}")
     
@@ -832,9 +836,7 @@ async def reset_prompt(
     """
     重置单个Prompt为默认值
     """
-    from services.ai.prompts import DEFAULT_PROMPTS
-    
-    valid_types = list(DEFAULT_PROMPTS.keys())
+    valid_types = ["chat", "summary", "tagger", "knowledge", "mindmap", "context_compress"]
     if prompt_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"无效的prompt类型，支持: {valid_types}")
     
@@ -848,11 +850,16 @@ async def reset_prompt(
 
 def get_user_prompt(db, user_id: int, prompt_type: str) -> str:
     """
-    获取用户的prompt（优先自定义，否则默认）
+    获取用户的prompt（优先自定义，否则从 PromptStore 获取默认）
     
     供其他模块调用
     """
-    from services.ai.prompts import DEFAULT_PROMPTS
+    from alice.control_plane import get_control_plane
     
     user_prompts = get_config_dict(db, user_id, "custom_prompts") or {}
-    return user_prompts.get(prompt_type) or DEFAULT_PROMPTS.get(prompt_type, "")
+    if user_prompts.get(prompt_type):
+        return user_prompts[prompt_type]
+    
+    # 回退到 PromptStore 默认值
+    cp = get_control_plane()
+    return cp.get_prompt_sync(prompt_type)

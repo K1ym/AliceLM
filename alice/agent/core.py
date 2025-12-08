@@ -6,6 +6,11 @@ AliceAgentCore - Agent 引擎统一入口
 - 内部协调 StrategySelector / TaskPlanner / ToolExecutor / ToolRouter / MemoryManager
 - 所有入口场景（chat / library / video / graph / timeline / tasks / console）
   最终都通过 AliceAgentCore.run_task() 处理
+  
+控制平面集成：
+- 模型选择走 ControlPlane.models
+- Prompt 获取走 ControlPlane.prompts
+- 工具创建走 ControlPlane.tools
 """
 
 import logging
@@ -17,6 +22,9 @@ from sqlalchemy.orm import Session
 from .types import AgentTask, AgentResult, AgentStep, AgentCitation
 from .strategy import StrategySelector
 from .tool_router import ToolRouter
+
+# 控制平面导入
+from alice.control_plane import AliceControlPlane, get_control_plane
 
 logger = logging.getLogger(__name__)
 
@@ -32,21 +40,38 @@ class AliceAgentCore:
     - ToolExecutor: ReAct 循环执行（S4 实现）
     """
     
-    def __init__(self, db: Session, enable_tools: bool = True):
+    def __init__(
+        self, 
+        db: Session, 
+        enable_tools: bool = True,
+        control_plane: Optional[AliceControlPlane] = None,
+    ):
         """
         初始化 Agent Core
         
         Args:
             db: 数据库 Session
             enable_tools: 是否启用工具（默认 True）
+            control_plane: 控制平面实例（可选，不传则使用全局单例）
         """
         self.db = db
         self.strategy_selector = StrategySelector()
         self.enable_tools = enable_tools
         
-        # 创建并注册基础工具
+        # 控制平面：统一配置中心
+        self.cp = control_plane or get_control_plane()
+        
+        # 工具路由器（使用 ToolRegistry 创建）
         if enable_tools:
-            self.tool_router = ToolRouter.create_with_basic_tools(db)
+            # 默认使用 chat 场景的工具，运行时可根据 scene 动态获取
+            self.tool_router = ToolRouter(db=db)
+            # 注册来自 ToolRegistry 的工具
+            tools = self.cp.tools.create_tools(scene="chat", db=db)
+            for tool in tools:
+                try:
+                    self.tool_router.register_tool(tool)
+                except Exception as e:
+                    pass  # 忽略注册失败的工具
         else:
             self.tool_router = None
         
@@ -221,18 +246,34 @@ class AliceAgentCore:
     async def _call_llm_with_tools(
         self, 
         messages: List[Dict[str, str]], 
-        tool_schemas: List[Dict[str, Any]]
+        tool_schemas: List[Dict[str, Any]],
+        task_type: str = "chat",
+        user_id: Optional[int] = None,
     ) -> tuple:
         """
         调用 LLM 生成回答（支持工具调用）
+        
+        现在使用 ControlPlane.models 获取模型配置
         
         Returns:
             (answer, tool_calls): answer 是文本回答，tool_calls 是工具调用列表
         """
         try:
-            from services.ai.llm import LLMManager
+            from services.ai.llm import LLMManager, create_llm_from_config
             
-            llm = LLMManager()
+            # 使用控制平面获取模型配置
+            resolved_model = await self.cp.resolve_model(task_type, user_id=user_id)
+            
+            # 根据配置创建 LLM
+            if resolved_model.base_url and resolved_model.api_key:
+                llm = create_llm_from_config(
+                    base_url=resolved_model.base_url,
+                    api_key=resolved_model.api_key,
+                    model=resolved_model.model,
+                )
+            else:
+                # 回退到默认 LLMManager
+                llm = LLMManager()
             
             # 转换 messages 格式
             formatted_messages = [

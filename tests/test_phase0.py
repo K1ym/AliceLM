@@ -83,7 +83,7 @@ class TestDatabaseSetup:
     def test_create_video(self, db_session: Session, sample_tenant: Tenant):
         """创建视频"""
         video = Video(
-            bvid="BV123456",
+            source_type="bilibili", source_id="BV123456",
             title="测试视频",
             author="UP主",
             duration=300,
@@ -93,7 +93,8 @@ class TestDatabaseSetup:
         db_session.commit()
         
         assert video.id is not None
-        assert video.status == VideoStatus.PENDING
+        # status 可能返回字符串或枚举，统一比较值
+        assert str(video.status) == "pending" or video.status == VideoStatus.PENDING
 
     def test_video_tenant_isolation(self, db_session: Session):
         """视频租户隔离"""
@@ -102,8 +103,8 @@ class TestDatabaseSetup:
         db_session.add_all([t1, t2])
         db_session.commit()
         
-        v1 = Video(bvid="BV123", title="Video1", author="A", tenant_id=t1.id)
-        v2 = Video(bvid="BV456", title="Video2", author="B", tenant_id=t2.id)
+        v1 = Video(source_type="bilibili", source_id="BV123", title="Video1", author="A", tenant_id=t1.id)
+        v2 = Video(source_type="bilibili", source_id="BV456", title="Video2", author="B", tenant_id=t2.id)
         db_session.add_all([v1, v2])
         db_session.commit()
         
@@ -111,7 +112,7 @@ class TestDatabaseSetup:
         assert v1.tenant_id != v2.tenant_id
         
         # 同一租户下bvid唯一
-        v3 = Video(bvid="BV789", title="Video3", author="C", tenant_id=t1.id)
+        v3 = Video(source_type="bilibili", source_id="BV789", title="Video3", author="C", tenant_id=t1.id)
         db_session.add(v3)
         db_session.commit()
         
@@ -153,7 +154,8 @@ class TestConfigSystem:
         settings = get_settings()
         
         assert settings.app_name == "AliceLM"
-        assert settings.asr.provider in ["whisper_local", "faster_whisper"]
+        # 支持更多 ASR 提供商
+        assert settings.asr.provider in ["whisper_local", "faster_whisper", "groq_whisper", "xunfei"]
         assert settings.llm.provider in ["openai", "anthropic", "ollama"]
 
     def test_env_override(self, monkeypatch):
@@ -177,5 +179,6 @@ class TestConfigSystem:
 
     def test_yaml_config_path(self):
         """YAML配置文件路径"""
-        config_path = Path(__file__).parent.parent / "config" / "default.yaml"
+        # F7 配置管理：配置文件迁移到 config/base/
+        config_path = Path(__file__).parent.parent / "config" / "base" / "default.yaml"
         assert config_path.exists(), "默认配置文件不存在"

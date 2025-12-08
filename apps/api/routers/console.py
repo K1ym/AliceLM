@@ -273,22 +273,26 @@ async def list_tools(
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """
-    列出可用工具
+    列出可用工具（使用控制平面）
     """
-    from alice.agent import ToolRouter
+    from alice.control_plane import get_control_plane
     from alice.agent.permissions import ToolVisibilityPolicy
     
-    router = ToolRouter.create_with_ext_tools()
-    all_tools = router.list_tools()
+    cp = get_control_plane()
+    
+    # 获取场景可用工具
+    scene_tools = cp.list_tools_for_scene(scene)
+    all_tools = [t.name for t in cp.tools.list_tools(enabled_only=False)]
     
     # 应用权限过滤
     policy = ToolVisibilityPolicy(user_role="admin", scene=scene, enable_unsafe=True)
-    allowed_tools = policy.filter_tools(all_tools)
+    allowed_tools = policy.filter_tools(scene_tools)
     
     return {
         "scene": scene,
         "total_tools": len(all_tools),
+        "scene_tools": len(scene_tools),
         "allowed_tools": len(allowed_tools),
         "tools": allowed_tools,
-        "blocked_tools": [t for t in all_tools if t not in allowed_tools],
+        "blocked_tools": [t for t in scene_tools if t not in allowed_tools],
     }

@@ -75,7 +75,7 @@ def cmd_scan(args):
             new_videos = scanner.scan_all_folders(db)
             print(f"\n[OK] 扫描完成，发现 {len(new_videos)} 个新视频")
             for v in new_videos[:10]:
-                print(f"  • [{v.bvid}] {v.title[:40]}")
+                print(f"  • [{v.source_id}] {v.title[:40]}")
             if len(new_videos) > 10:
                 print(f"  ... 还有 {len(new_videos) - 10} 个")
         else:
@@ -167,7 +167,7 @@ def cmd_list_videos(args):
                 VideoStatus.DONE: "[DONE]",
                 VideoStatus.FAILED: "[FAIL]",
             }.get(v.status, "[?]")
-            print(f"{status_icon} [{v.bvid}] {v.title[:50]:<50} {v.status.value}")
+            print(f"{status_icon} [{v.source_id}] {v.title[:50]:<50} {v.status.value}")
 
 
 def cmd_process(args):
@@ -193,18 +193,18 @@ def cmd_process(args):
         
         print(f"[INFO] 发现 {pending_count} 个待处理视频")
         
-        if args.bvid:
+        if args.source_id:
             # 处理指定视频
             video = db.query(Video).filter(
                 Video.tenant_id == tenant.id,
-                Video.bvid == args.bvid,
+                Video.source_id == args.source_id,
             ).first()
             
             if not video:
-                print(f"[ERROR] 视频不存在: {args.bvid}")
+                print(f"[ERROR] 视频不存在: {args.source_id}")
                 return
             
-            print(f"开始处理: [{video.bvid}] {video.title[:40]}")
+            print(f"开始处理: [{video.source_id}] {video.title[:40]}")
             pipeline = VideoPipeline(sessdata=sessdata)
             
             try:
@@ -223,7 +223,7 @@ def cmd_process(args):
             
             print(f"\n[OK] 处理完成: {len(processed)} 个视频")
             for v in processed:
-                print(f"   [{v.bvid}] {v.title[:40]}")
+                print(f"   [{v.source_id}] {v.title[:40]}")
 
 
 def cmd_bilibili(args):
@@ -239,7 +239,7 @@ def cmd_bilibili(args):
         print(f"\n收藏夹: {info.title} ({info.media_count}个视频)")
         print("-" * 60)
         for v in videos[:20]:
-            print(f"  [{v.bvid}] {v.title[:40]}")
+            print(f"  [{v.source_id}] {v.title[:40]}")
         if len(videos) > 20:
             print(f"  ... 还有 {len(videos) - 20} 个")
     
@@ -265,7 +265,7 @@ def cmd_bilibili(args):
         print(f"\n合集: {info.title} ({info.media_count}个视频)")
         print("-" * 60)
         for v in videos[:20]:
-            print(f"  [{v.bvid}] {v.title[:40]}")
+            print(f"  [{v.source_id}] {v.title[:40]}")
         if len(videos) > 20:
             print(f"  ... 还有 {len(videos) - 20} 个")
     

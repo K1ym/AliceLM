@@ -194,9 +194,22 @@ AliceLM/
 │   │               ├── http_web.py
 │   │               └── unsafe.py
 │   │
-│   └── search/                 # SearchAgent 服务
-│       ├── search_agent.py     # SearchAgentService
-│       └── web_client.py       # Web 搜索客户端封装
+│   ├── control_plane/          # ★ 控制平面（配置中心）
+│   │   ├── __init__.py         # 统一导出
+│   │   ├── control_plane.py    # AliceControlPlane（统一入口）
+│   │   ├── model_registry.py   # ModelRegistry（模型配置）
+│   │   ├── prompt_store.py     # PromptStore（Prompt 管理）
+│   │   ├── tool_registry.py    # ToolRegistry（工具注册）
+│   │   ├── service_factory.py  # ServiceFactory（服务工厂）
+│   │   └── types.py            # 共享类型定义
+│   │
+│   ├── search/                 # SearchAgent 服务
+│   │   ├── search_agent.py     # SearchAgentService
+│   │   └── web_client.py       # Web 搜索客户端封装
+│   │
+│   └── eval/                   # 评估模块
+│       ├── eval_runner.py      # 评测执行器
+│       └── eval_case.py        # 评测用例
 │
 ├── services/
 │   ├── watcher/                # 收藏夹监控服务
@@ -256,6 +269,12 @@ AliceLM/
 │   └── config/                 # 配置管理
 │       ├── settings.py
 │       └── .env.example
+│
+├── config/                     # ★ ControlPlane 配置中心
+│   ├── models.yaml             # 模型配置 (LLM/Embedding/ASR profiles)
+│   ├── prompts.yaml            # Prompt 配置 (系统人格/任务专用)
+│   ├── tools.yaml              # 工具配置 (工具列表/场景默认)
+│   └── services.yaml           # 服务配置 (Provider 实现)
 │
 ├── third_party/                # ★ 开源参考仓库（新增，gitignore）
 │   ├── mindsearch/             # MindSearch clone
@@ -792,6 +811,65 @@ AliceAgentCore
   但在代码结构和命名上完全内化为 Alice 自己的模块，不暴露第三方工程名；
 - 深度 Web 搜索属于 **Service 层**能力，对 Agent 暴露为 Tool；
   Agent 与 Provider 不直接交互，只通过 Tool 调用 Service，由 Service 再调用底层 HTTP / MCP Client / 抓取逻辑。
+
+---
+
+##### 七、ControlPlane（控制平面）
+
+**目标**：为 Alice 提供统一的配置中心，管理模型、Prompt、工具、服务的生命周期。
+
+**核心组件**：
+
+```
+AliceControlPlane (统一入口)
+├── ModelRegistry    # 模型配置：LLM/Embedding/ASR profiles
+├── PromptStore      # Prompt 管理：系统人格/任务专用
+├── ToolRegistry     # 工具注册：工具列表/场景默认
+└── ServiceFactory   # 服务工厂：Provider 实现配置
+```
+
+**配置文件**（位于 `config/` 目录）：
+
+| 文件 | 内容 |
+|------|------|
+| `models.yaml` | 模型 profiles + 任务默认映射 |
+| `prompts.yaml` | Prompt 文本 + key 规范 |
+| `tools.yaml` | 工具定义 + 场景默认工具集 |
+| `services.yaml` | 服务配置 + Provider 实现 |
+
+**关键能力**：
+
+1. **模型解析**：`cp.resolve_model(task_type)` → 返回包含 provider/model/api_key 的 ResolvedModel
+2. **LLM 创建**：`await cp.create_llm_for_task(task_type)` → 返回配置好的 ChatAI 实例
+3. **Prompt 获取**：`await cp.get_prompt(key, user_id)` → 返回生效的 Prompt（含用户覆盖）
+4. **工具列表**：`cp.list_tools_for_scene(scene)` → 返回场景可用工具名列表
+
+**HTTP API**（`/api/v1/control-plane/*`）：
+
+| 端点 | 用途 |
+|------|------|
+| `GET /models` | 列出所有模型 profiles |
+| `GET /models/resolve` | 查看某任务实际使用的模型 |
+| `GET /tools` | 列出场景可用工具 |
+| `GET /prompts` | 列出 Prompt keys |
+| `GET /summary` | 控制平面状态摘要 |
+
+**使用示例**：
+
+```python
+from alice.control_plane import get_control_plane
+
+cp = get_control_plane()
+
+# 获取模型
+llm = await cp.create_llm_for_task("chat")
+
+# 获取 Prompt
+prompt = await cp.get_prompt("chat", user_id=user.id)
+
+# 获取场景工具
+tools = cp.list_tools_for_scene("research")
+```
 
 ---
 ## 3. 数据模型

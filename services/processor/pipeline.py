@@ -14,6 +14,9 @@ from packages.db import Video, VideoStatus
 from packages.logging import get_logger
 from services.asr import ASRManager, TranscriptResult, create_api_asr
 
+# 控制平面
+from alice.control_plane import get_control_plane
+
 from .audio import AudioProcessor
 from .downloader import VideoDownloader
 
@@ -45,24 +48,31 @@ class VideoPipeline:
     def _get_asr_provider(self, db: Session, user_id: int):
         """
         获取ASR提供者
-        优先使用用户配置的API ASR，否则使用本地ASR
+        使用控制平面获取 ASR 模型配置
         """
-        from apps.api.routers.config import get_task_llm_config
+        cp = get_control_plane()
         
-        # 获取用户配置的ASR任务模型
-        asr_config = get_task_llm_config(db, user_id, "asr")
+        # 同步获取 ASR 模型配置
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            resolved = loop.run_until_complete(
+                cp.resolve_model("asr", user_id=user_id)
+            )
+        finally:
+            loop.close()
         
-        if asr_config.get("api_key") and asr_config.get("base_url") and asr_config.get("model"):
+        if resolved.api_key and resolved.base_url:
             logger.info(
                 "using_api_asr",
                 user_id=user_id,
-                model=asr_config["model"],
-                base_url=asr_config["base_url"],
+                model=resolved.model,
+                base_url=resolved.base_url,
             )
             return create_api_asr(
-                base_url=asr_config["base_url"],
-                api_key=asr_config["api_key"],
-                model=asr_config["model"],
+                base_url=resolved.base_url,
+                api_key=resolved.api_key,
+                model=resolved.model,
             )
         
         # 回退到本地ASR
@@ -70,24 +80,14 @@ class VideoPipeline:
         return self.asr_manager
     
     def _get_summarizer(self, db: Session, user_id: int):
-        """获取摘要分析器，使用用户配置的模型"""
-        from apps.api.routers.config import get_task_llm_config
+        """获取摘要分析器，使用控制平面获取模型配置"""
         from services.ai import Summarizer
-        from services.ai.llm import create_llm_from_config
         
-        # 获取用户配置的summary任务模型
-        llm_config = get_task_llm_config(db, user_id, "summary")
+        cp = get_control_plane()
+        llm = cp.create_llm_for_task_sync("summary", user_id=user_id)
         
-        if llm_config.get("api_key") and llm_config.get("base_url"):
-            llm = create_llm_from_config(
-                base_url=llm_config["base_url"],
-                api_key=llm_config["api_key"],
-                model=llm_config["model"],
-            )
-            logger.info("using_user_summary_model", model=llm_config["model"])
-            return Summarizer(llm_manager=llm)
-        
-        return Summarizer()
+        logger.info("using_summary_model_from_control_plane", user_id=user_id)
+        return Summarizer(llm_manager=llm)
 
     def process(self, video: Video, db: Session, user_id: Optional[int] = None) -> Video:
         """
@@ -112,54 +112,54 @@ class VideoPipeline:
             video.status = VideoStatus.DOWNLOADING.value
             db.commit()
             
-            logger.info("pipeline_step", step="download", bvid=video.bvid)
-            
+            logger.info("pipeline_step", step="download", source_type=video.source_type, source_id=video.source_id)
+
             ai_subtitle = None
             audio_path = None
-            
-            # 尝试使用BBDown下载音频+AI字幕
+
+            # 使用统一下载器接口
             try:
-                from services.downloader import get_bbdown_service, DownloadMode
-                bbdown = get_bbdown_service()
-                if bbdown.bbdown_path:
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        result = loop.run_until_complete(
-                            bbdown.download_video(video.bvid, mode=DownloadMode.AUDIO, with_subtitle=True)
-                        )
-                        if result.success and result.file_path:
-                            audio_path = result.file_path
-                            if result.subtitle_path and result.subtitle_path.exists():
-                                ai_subtitle = result.subtitle_path.read_text(encoding="utf-8")
-                                logger.info("ai_subtitle_found", bvid=video.bvid)
-                            logger.info("bbdown_download_success", bvid=video.bvid)
-                    finally:
-                        loop.close()
+                from services.downloader import get_downloader, DownloadMode
+                import asyncio
+
+                downloader = get_downloader(video.source_type)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(
+                        downloader.download(video.source_id, mode=DownloadMode.AUDIO)
+                    )
+                    if result.success and result.file_path:
+                        audio_path = result.file_path
+                        if result.subtitle_content:
+                            ai_subtitle = result.subtitle_content
+                            logger.info("subtitle_found", source_id=video.source_id)
+                        logger.info("download_success", source_type=video.source_type, source_id=video.source_id)
+                finally:
+                    loop.close()
             except Exception as e:
-                logger.warning("bbdown_failed", bvid=video.bvid, error=str(e))
-            
-            # 回退到yt-dlp
-            if audio_path is None:
-                logger.info("fallback_to_ytdlp", bvid=video.bvid)
-                video_path = self.downloader.download_bilibili(video.bvid, self.sessdata)
+                logger.warning("download_failed", source_id=video.source_id, error=str(e))
+
+            # 如果统一下载器失败，回退到旧逻辑（仅 bilibili）
+            if audio_path is None and video.source_type == "bilibili":
+                logger.info("fallback_to_legacy", source_id=video.source_id)
+                video_path = self.downloader.download_bilibili(video.source_id, self.sessdata)
                 video.video_path = str(video_path)
                 db.commit()
-                
+
                 # 提取音频
-                logger.info("pipeline_step", step="extract_audio", bvid=video.bvid)
-                audio_path = self.audio_processor.extract_audio(video_path, video.bvid)
+                logger.info("pipeline_step", step="extract_audio", source_id=video.source_id)
+                audio_path = self.audio_processor.extract_audio(video_path, video.source_id)
                 
                 # 删除原视频文件
                 try:
                     if video_path.exists():
                         video_path.unlink()
-                        logger.info("video_file_deleted", bvid=video.bvid, path=str(video_path))
+                        logger.info("video_file_deleted", source_id=video.source_id, path=str(video_path))
                     video.video_path = None
                     db.commit()
                 except Exception as e:
-                    logger.warning("video_delete_failed", bvid=video.bvid, error=str(e))
+                    logger.warning("video_delete_failed", source_id=video.source_id, error=str(e))
             
             video.audio_path = str(audio_path)
             db.commit()
@@ -168,11 +168,11 @@ class VideoPipeline:
             video.status = VideoStatus.TRANSCRIBING.value
             db.commit()
             
-            logger.info("pipeline_step", step="transcribe", bvid=video.bvid)
+            logger.info("pipeline_step", step="transcribe", source_id=video.source_id)
             
             # 如果有AI字幕，直接使用（跳过ASR）
             if ai_subtitle:
-                logger.info("using_ai_subtitle", bvid=video.bvid)
+                logger.info("using_ai_subtitle", source_id=video.source_id)
                 from services.asr import TranscriptResult, TranscriptSegment
                 result = TranscriptResult(
                     text=ai_subtitle,
@@ -189,7 +189,7 @@ class VideoPipeline:
                     result = self.asr_manager.transcribe(str(audio_path))
             
             # 保存转写结果
-            transcript_path = self._save_transcript(video.bvid, result)
+            transcript_path = self._save_transcript(video.source_id, result)
             video.transcript_path = str(transcript_path)
             db.commit()
 
@@ -198,7 +198,7 @@ class VideoPipeline:
             db.commit()
             
             try:
-                logger.info("pipeline_step", step="analyze", bvid=video.bvid)
+                logger.info("pipeline_step", step="analyze", source_id=video.source_id)
                 summarizer = self._get_summarizer(db, user_id) if user_id else None
                 if summarizer is None:
                     from services.ai import Summarizer
@@ -218,23 +218,23 @@ class VideoPipeline:
                 
                 logger.info(
                     "analysis_complete",
-                    bvid=video.bvid,
+                    source_id=video.source_id,
                     summary_length=len(analysis.summary),
                 )
             except Exception as e:
                 # AI分析失败不阻塞流程
-                logger.warning("analysis_skipped", bvid=video.bvid, error=str(e))
+                logger.warning("analysis_skipped", source_id=video.source_id, error=str(e))
 
             # Step 5: 向量化（索引到知识库）
             video.status = VideoStatus.INDEXING.value
             db.commit()
             
             try:
-                logger.info("pipeline_step", step="indexing", bvid=video.bvid)
+                logger.info("pipeline_step", step="indexing", source_id=video.source_id)
                 self._index_to_rag(video, result.text, db, user_id)
             except Exception as e:
                 # 向量化失败不阻塞流程
-                logger.warning("indexing_skipped", bvid=video.bvid, error=str(e))
+                logger.warning("indexing_skipped", source_id=video.source_id, error=str(e))
 
             # Step 6: 完成
             video.status = VideoStatus.DONE.value
@@ -243,7 +243,7 @@ class VideoPipeline:
 
             logger.info(
                 "pipeline_complete",
-                bvid=video.bvid,
+                source_id=video.source_id,
                 text_length=len(result.text),
             )
 
@@ -252,7 +252,7 @@ class VideoPipeline:
                 # 优先使用摘要，否则用转写预览
                 notify_content = video.summary or result.text[:200]
                 self.notifier.send_video_complete(
-                    bvid=video.bvid,
+                    source_id=video.source_id,
                     title=video.title,
                     transcript_preview=notify_content,
                 )
@@ -265,12 +265,12 @@ class VideoPipeline:
             video.retry_count += 1
             db.commit()
             
-            logger.error("pipeline_failed", bvid=video.bvid, error=str(e))
+            logger.error("pipeline_failed", source_id=video.source_id, error=str(e))
             
             # 发送失败通知
             if self.notifier and self.notifier.is_configured():
                 self.notifier.send_error(
-                    bvid=video.bvid,
+                    source_id=video.source_id,
                     title=video.title,
                     error=str(e),
                 )
@@ -287,7 +287,7 @@ class VideoPipeline:
             db: 数据库会话
             user_id: 用户ID（用于获取用户配置的 embedding）
         """
-        from services.ai.rag import RAGService, get_rag_client
+        from alice.rag import RAGService, get_rag_client
         
         # 获取 RAG 客户端（带用户配置）
         client = get_rag_client(user_id=user_id)
@@ -303,19 +303,19 @@ class VideoPipeline:
         logger.info(
             "video_indexed",
             video_id=video.id,
-            bvid=video.bvid,
+            source_id=video.source_id,
             doc_id=doc_id,
         )
 
-    def _save_transcript(self, bvid: str, result: TranscriptResult) -> Path:
+    def _save_transcript(self, source_id: str, result: TranscriptResult) -> Path:
         """保存转写结果"""
         # 保存纯文本
-        txt_path = self.transcript_dir / f"{bvid}.txt"
+        txt_path = self.transcript_dir / f"{source_id}.txt"
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(result.text)
 
         # 保存带时间戳的JSON
-        json_path = self.transcript_dir / f"{bvid}.json"
+        json_path = self.transcript_dir / f"{source_id}.json"
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(
                 {
@@ -367,7 +367,7 @@ class VideoPipeline:
                 self.process(video, db)
                 processed.append(video)
             except Exception as e:
-                logger.error("process_video_failed", bvid=video.bvid, error=str(e))
+                logger.error("process_video_failed", source_id=video.source_id, error=str(e))
                 continue
 
         return processed

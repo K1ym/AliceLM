@@ -25,7 +25,8 @@ class VideoAnalysis:
     language: str = "zh"                # 语言
 
 
-SYSTEM_PROMPT = """你是一个专业的视频内容分析助手。你的任务是分析视频转写文本，提取关键信息。
+# 硬编码 prompt 保留为回退（当 ControlPlane 不可用时）
+_FALLBACK_SYSTEM_PROMPT = """你是一个专业的视频内容分析助手。你的任务是分析视频转写文本，提取关键信息。
 
 请严格按照以下JSON格式输出：
 {
@@ -34,12 +35,6 @@ SYSTEM_PROMPT = """你是一个专业的视频内容分析助手。你的任务�
     "concepts": ["关键概念1", "关键概念2"],
     "tags": ["标签1", "标签2", "标签3"]
 }
-
-要求：
-1. summary: 50-200字，简洁清晰，包含视频的核心主题和主要结论
-2. key_points: 3-5条，每条20-50字，提炼视频中最重要的观点
-3. concepts: 视频中出现的专业术语或核心概念（2-5个）
-4. tags: 用于分类的标签，如领域、主题等（2-4个）
 
 只输出JSON，不要有其他内容。"""
 
@@ -54,6 +49,34 @@ USER_PROMPT_TEMPLATE = """请分析以下视频内容：
 {transcript}
 
 请提取摘要、核心观点、关键概念和标签。"""
+
+
+def _get_summary_prompt() -> str:
+    """获取摘要 prompt（通过 ControlPlane）"""
+    try:
+        from alice.control_plane import get_control_plane
+        cp = get_control_plane()
+        prompt = cp.get_prompt_sync("summary")
+        if prompt:
+            return prompt
+    except Exception as e:
+        logger.warning(f"Failed to get prompt from ControlPlane: {e}")
+    
+    return _FALLBACK_SYSTEM_PROMPT
+
+
+def _get_summary_quick_prompt() -> str:
+    """获取快速摘要 prompt"""
+    try:
+        from alice.control_plane import get_control_plane
+        cp = get_control_plane()
+        prompt = cp.get_prompt_sync("summary_quick")
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+    
+    return "你是一个专业的内容摘要助手，善于提炼核心信息。"
 
 
 class Summarizer:
@@ -100,9 +123,12 @@ class Summarizer:
             duration=duration // 60 if duration else 0,
             transcript=transcript,
         )
+        
+        # 从 ControlPlane 获取 prompt
+        system_prompt = _get_summary_prompt()
 
         messages = [
-            Message(role="system", content=SYSTEM_PROMPT),
+            Message(role="system", content=system_prompt),
             Message(role="user", content=user_prompt),
         ]
 
@@ -166,9 +192,12 @@ class Summarizer:
 {transcript[:8000]}
 
 摘要："""
+        
+        # 从 ControlPlane 获取 prompt
+        system_prompt = _get_summary_quick_prompt()
 
         return self.llm.complete(
             prompt,
-            system_prompt="你是一个专业的内容摘要助手，善于提炼核心信息。",
+            system_prompt=system_prompt,
             temperature=0.3,
         )

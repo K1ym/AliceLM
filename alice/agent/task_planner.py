@@ -199,9 +199,9 @@ class TaskPlanner:
         available_tools: List[str]
     ) -> tuple:
         """
-        使用 LLM 生成执行计划
+        使用 LLM 生成执行计划（通过控制平面）
         """
-        from services.ai.llm import LLMManager
+        from alice.control_plane import get_control_plane
         
         # 构建工具描述
         tools_desc = self._format_tools_description(available_tools)
@@ -212,7 +212,8 @@ class TaskPlanner:
             query=query,
         )
         
-        llm = LLMManager()
+        cp = get_control_plane()
+        llm = cp.create_llm_for_task_sync("chat")
         response = llm.chat([
             {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},

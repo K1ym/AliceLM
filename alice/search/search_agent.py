@@ -188,11 +188,12 @@ class SearchAgentService:
         if not need_decompose:
             return [query]
         
-        # 尝试使用 LLM 拆解
+        # 使用 LLM 拆解
         try:
-            from services.ai.llm import LLMManager
+            from alice.control_plane import get_control_plane
             
-            llm = LLMManager()
+            cp = get_control_plane()
+            llm = cp.create_llm_for_task_sync("chat")
             prompt = QUERY_DECOMPOSE_PROMPT.format(query=query)
             response = llm.chat([{"role": "user", "content": prompt}])
             
@@ -288,9 +289,10 @@ class SearchAgentService:
             sources_text += f"    摘要: {src.snippet or src.content or 'N/A'}\n\n"
         
         try:
-            from services.ai.llm import LLMManager
+            from alice.control_plane import get_control_plane
             
-            llm = LLMManager()
+            cp = get_control_plane()
+            llm = cp.create_llm_for_task_sync("chat")
             prompt = ANSWER_SYNTHESIS_PROMPT.format(
                 query=query,
                 sources=sources_text,

@@ -21,7 +21,7 @@ class VideoRepository(BaseRepository[Video]):
         """根据BV号获取视频"""
         return (
             self.db.query(Video)
-            .filter(Video.tenant_id == tenant_id, Video.bvid == bvid)
+            .filter(Video.tenant_id == tenant_id, Video.source_id == bvid)
             .first()
         )
     

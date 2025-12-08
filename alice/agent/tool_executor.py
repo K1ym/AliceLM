@@ -466,11 +466,12 @@ class ToolExecutor:
         return result
     
     async def _call_llm(self, messages: List[Dict[str, str]]) -> str:
-        """调用 LLM"""
+        """调用 LLM（使用控制平面）"""
         try:
-            from services.ai.llm import LLMManager
+            from alice.control_plane import get_control_plane
             
-            llm = LLMManager()
+            cp = get_control_plane()
+            llm = cp.create_llm_for_task_sync("chat")
             return llm.chat(messages)
             
         except Exception as e:

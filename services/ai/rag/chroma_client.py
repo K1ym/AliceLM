@@ -72,10 +72,7 @@ class ChromaClient:
         """
         获取 embedding 函数
         
-        优先级:
-        1. 用户配置的 embedding 端点 (前端任务模型配置)
-        2. 全局 LLM API key
-        3. 本地默认模型 (all-MiniLM-L6-v2)
+        使用控制平面获取 embedding 模型配置
         """
         if self._embedding_fn is None:
             from chromadb.utils import embedding_functions
@@ -84,33 +81,38 @@ class ChromaClient:
             base_url = None
             model_name = self.config.embedding_model
             
-            # 1. 尝试从用户配置获取 embedding 端点
+            # 使用控制平面获取 embedding 配置
             if self.user_id:
                 try:
-                    from apps.api.services.config_service import ConfigService
-                    from apps.api.repositories.config_repo import ConfigRepository
-                    from packages.db import get_db
+                    from alice.control_plane import get_control_plane
+                    import asyncio
                     
-                    db = next(get_db())
-                    config_repo = ConfigRepository(db)
-                    config_service = ConfigService(config_repo)
+                    cp = get_control_plane()
                     
-                    embedding_config = config_service.get_task_llm_config(self.user_id, "embedding")
-                    if embedding_config.get("api_key"):
-                        api_key = embedding_config["api_key"]
-                        base_url = embedding_config.get("base_url")
-                        model_name = embedding_config.get("model") or model_name
-                        logger.info("embedding_config_source", source="user_config", model=model_name)
+                    # 同步获取模型配置
+                    loop = asyncio.new_event_loop()
+                    try:
+                        resolved = loop.run_until_complete(
+                            cp.resolve_model("embedding", user_id=self.user_id)
+                        )
+                    finally:
+                        loop.close()
+                    
+                    if resolved.api_key:
+                        api_key = resolved.api_key
+                        base_url = resolved.base_url
+                        model_name = resolved.model or model_name
+                        logger.info("embedding_config_source", source="control_plane", model=model_name)
                 except Exception as e:
-                    logger.warning("user_embedding_config_failed", error=str(e))
+                    logger.warning("control_plane_embedding_config_failed", error=str(e))
             
-            # 2. 回退到全局配置
+            # 回退到全局配置
             if not api_key:
                 app_config = get_config()
                 api_key = app_config.llm.api_key
                 base_url = getattr(app_config.llm, 'base_url', None)
             
-            # 3. 创建 embedding 函数
+            # 创建 embedding 函数
             if api_key:
                 try:
                     self._embedding_fn = embedding_functions.OpenAIEmbeddingFunction(

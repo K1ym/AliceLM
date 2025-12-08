@@ -61,7 +61,7 @@ async def import_video(
         )
         return VideoImportResponse(
             id=video.id,
-            bvid=video.bvid,
+            bvid=video.source_id,
             title=video.title,
             status=video.status,
             message="已加入处理队列" if is_new else "视频已存在",
@@ -89,7 +89,7 @@ async def import_videos_batch(
                 "success": True,
                 "data": VideoImportResponse(
                     id=video.id,
-                    bvid=video.bvid,
+                    bvid=video.source_id,
                     title=video.title,
                     status=video.status,
                     message="已加入处理队列" if is_new else "视频已存在",
@@ -142,7 +142,7 @@ async def list_videos(
     items = [
         VideoSummary(
             id=v.id,
-            bvid=v.bvid,
+            bvid=v.source_id,
             title=v.title,
             author=v.author,
             duration=v.duration,
@@ -179,7 +179,7 @@ async def get_processing_queue(
     def video_to_dict(v):
         return {
             "id": v.id,
-            "bvid": v.bvid,
+            "source_id": v.source_id,
             "title": v.title,
             "status": v.status,
             "error_message": v.error_message,
@@ -239,7 +239,7 @@ async def get_video(
     
     return VideoDetail(
         id=video.id,
-        bvid=video.bvid,
+        bvid=video.source_id,
         title=video.title,
         author=video.author,
         duration=video.duration,
@@ -305,7 +305,7 @@ async def get_transcript(
         ]
     
     return VideoTranscript(
-        bvid=video.bvid,
+        bvid=video.source_id,
         title=video.title,
         transcript=transcript,
         segments=segments,
@@ -492,7 +492,7 @@ async def get_video_comments(
         # 获取视频aid
         info = client._request(
             "https://api.bilibili.com/x/web-interface/view",
-            {"bvid": video.bvid}
+            {"source_id": video.source_id}
         )
         aid = info.get("aid")
         

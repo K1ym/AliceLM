@@ -1,0 +1,76 @@
+# AliceLM Services Configuration
+# Service/Provider 选择
+
+services:
+  # RAG 服务
+  rag:
+    provider: chroma          # chroma | ragflow
+    fallback: chroma          # 降级方案
+    config:
+      persist_dir: "data/chroma"
+
+  # 搜索服务
+  search:
+    provider: tavily          # tavily | duckduckgo | exa
+    fallback: duckduckgo
+    config:
+      max_results: 10
+
+  # ASR 服务
+  asr:
+    provider: local_whisper   # local_whisper | faster_whisper | groq_whisper | openai_whisper
+    fallback: groq_whisper
+    config:
+      model_size: medium
+      device: auto
+
+  # 下载服务
+  downloader:
+    provider: bbdown          # bbdown | yt-dlp
+    fallback: yt-dlp
+    config:
+      output_dir: "data/videos"
+
+  # Embedding 服务
+  embedding:
+    provider: openai          # openai | local
+    config:
+      model: text-embedding-3-large
+
+# Provider 实现映射
+providers:
+  # RAG Providers
+  chroma:
+    impl: services.ai.rag.chroma.ChromaRAGProvider
+  ragflow:
+    impl: services.ai.rag.ragflow.RAGFlowProvider
+
+  # Search Providers
+  tavily:
+    impl: alice.search.providers.TavilyProvider
+  duckduckgo:
+    impl: alice.search.providers.DuckDuckGoProvider
+  exa:
+    impl: alice.search.providers.ExaProvider
+
+  # ASR Providers
+  local_whisper:
+    impl: services.asr.whisper_local.LocalWhisperProvider
+  faster_whisper:
+    impl: services.asr.faster_whisper.FasterWhisperProvider
+  groq_whisper:
+    impl: services.asr.api_provider.GroqWhisperProvider
+  openai_whisper:
+    impl: services.asr.api_provider.OpenAIWhisperProvider
+
+  # Downloader Providers
+  bbdown:
+    impl: services.downloader.bbdown.BBDownProvider
+  yt-dlp:
+    impl: services.downloader.ytdlp.YtDlpProvider
+
+  # Embedding Providers
+  openai:
+    impl: services.ai.embedder.OpenAIEmbedder
+  local:
+    impl: services.ai.embedder.LocalEmbedder

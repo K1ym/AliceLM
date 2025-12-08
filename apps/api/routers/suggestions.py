@@ -15,6 +15,9 @@ from packages.db import User, Video, VideoStatus
 from packages.logging import get_logger
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 
+# 控制平面
+from alice.control_plane import get_control_plane
+
 from ..deps import get_current_user, get_video_service, get_config_service
 from ..services import VideoService, ConfigService
 
@@ -114,17 +117,9 @@ async def _generate_suggestions_from_videos(
 只返回JSON，不要其他内容。"""
 
     try:
-        # 获取用户配置的LLM
-        llm_config = config_service.get_task_llm_config(user_id, "chat")
-        
-        if llm_config.get("api_key") and llm_config.get("base_url"):
-            llm = create_llm_from_config(
-                base_url=llm_config["base_url"],
-                api_key=llm_config["api_key"],
-                model=llm_config.get("model", "gpt-4o-mini"),
-            )
-        else:
-            llm = LLMManager()
+        # 使用控制平面获取 LLM
+        cp = get_control_plane()
+        llm = await cp.create_llm_for_task("chat", user_id=user_id)
         
         messages = [LLMMessage(role="user", content=prompt)]
         response = llm.chat(messages)

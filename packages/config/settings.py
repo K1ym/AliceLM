@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import yaml
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
@@ -17,8 +17,7 @@ class DatabaseSettings(BaseSettings):
     url: str = Field(default="sqlite:///data/bili_learner.db")
     echo: bool = Field(default=False)
     
-    class Config:
-        env_prefix = "ALICE_DB_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_DB_")
 
 
 class ASRSettings(BaseSettings):
@@ -27,8 +26,7 @@ class ASRSettings(BaseSettings):
     model_size: str = Field(default="medium")
     device: str = Field(default="auto")
     
-    class Config:
-        env_prefix = "ALICE_ASR_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_ASR_")
 
 
 class LLMSettings(BaseSettings):
@@ -38,8 +36,7 @@ class LLMSettings(BaseSettings):
     api_key: str = Field(default="")
     base_url: Optional[str] = Field(default=None)
     
-    class Config:
-        env_prefix = "ALICE_LLM_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_LLM_")
 
 
 class RAGSettings(BaseSettings):
@@ -49,8 +46,7 @@ class RAGSettings(BaseSettings):
     api_key: str = Field(default="")
     chroma_persist_dir: str = Field(default="data/chroma")  # ChromaDB 数据目录
     
-    class Config:
-        env_prefix = "ALICE_RAG_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_RAG_")
 
 
 class WeChatSettings(BaseSettings):
@@ -61,8 +57,7 @@ class WeChatSettings(BaseSettings):
     secret: str = Field(default="")
     enabled: bool = Field(default=False)
     
-    class Config:
-        env_prefix = "ALICE_WECHAT_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_WECHAT_")
 
 
 class BilibiliSettings(BaseSettings):
@@ -70,8 +65,7 @@ class BilibiliSettings(BaseSettings):
     sessdata: str = Field(default="")
     poll_interval: int = Field(default=300)  # 秒
     
-    class Config:
-        env_prefix = "ALICE_BILI_"
+    model_config = SettingsConfigDict(env_prefix="ALICE_BILI_")
 
 
 class Settings(BaseSettings):
@@ -88,9 +82,10 @@ class Settings(BaseSettings):
     wechat: WeChatSettings = Field(default_factory=WeChatSettings)
     bilibili: BilibiliSettings = Field(default_factory=BilibiliSettings)
     
-    class Config:
-        env_prefix = "ALICE_"
-        env_nested_delimiter = "__"
+    model_config = SettingsConfigDict(
+        env_prefix="ALICE_",
+        env_nested_delimiter="__",
+    )
 
 
 def load_yaml_config(config_path: str = "config/default.yaml") -> dict[str, Any]:

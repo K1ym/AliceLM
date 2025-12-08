@@ -97,10 +97,8 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50))
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    # 第三方绑定
+    # 第三方绑定（微信保留，其他平台迁移到 UserPlatformBinding）
     wechat_openid: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    bilibili_uid: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    bilibili_sessdata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # 角色与权限
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.MEMBER)
@@ -117,6 +115,31 @@ class User(Base):
     )
     conversations: Mapped[List["Conversation"]] = relationship(
         "Conversation", back_populates="user", order_by="Conversation.updated_at.desc()"
+    )
+    platform_bindings: Mapped[List["UserPlatformBinding"]] = relationship(
+        "UserPlatformBinding", back_populates="user"
+    )
+
+
+class UserPlatformBinding(Base):
+    """用户平台绑定 - 存储各平台的认证凭证"""
+    __tablename__ = "user_platform_bindings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+
+    platform: Mapped[str] = mapped_column(String(20))  # bilibili / youtube / podcast / ...
+    platform_uid: Mapped[str] = mapped_column(String(100))
+    credentials: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: token/sessdata/...
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关系
+    user: Mapped["User"] = relationship("User", back_populates="platform_bindings")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "platform", name="uq_user_platform"),
     )
 
 
@@ -162,14 +185,16 @@ class Video(Base):
         Integer, ForeignKey("watched_folders.id", ondelete="SET NULL"), nullable=True, index=True
     )
     
-    # 视频信息
-    bvid: Mapped[str] = mapped_column(String(20), index=True)
+    # 内容源信息
+    source_type: Mapped[str] = mapped_column(String(20), default="bilibili", index=True)
+    source_id: Mapped[str] = mapped_column(String(100), index=True)  # bvid / youtube_id / rss_guid / file_hash
+    source_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # 内容元数据
     title: Mapped[str] = mapped_column(String(500))
     author: Mapped[str] = mapped_column(String(100))
     duration: Mapped[int] = mapped_column(Integer, default=0)
     cover_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    source_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    source_type: Mapped[str] = mapped_column(String(20), default="bilibili")
 
     # 处理状态（存储枚举的value而非name）
     status: Mapped[str] = mapped_column(String(20), default="pending")
@@ -202,8 +227,9 @@ class Video(Base):
     tags: Mapped[List["VideoTag"]] = relationship("VideoTag", back_populates="video")
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "bvid", name="uq_tenant_video"),
+        UniqueConstraint("tenant_id", "source_type", "source_id", name="uq_tenant_source"),
         Index("ix_tenant_status", "tenant_id", "status"),
+        Index("ix_tenant_source_type", "tenant_id", "source_type"),
     )
 
 

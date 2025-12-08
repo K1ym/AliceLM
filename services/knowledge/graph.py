@@ -58,7 +58,7 @@ class KnowledgeGraph:
                 {"id": f"concept:{c.id}", "name": c.name, "type": "concept", "count": c.video_count}
                 for c in self.concept_nodes.values()
             ] + [
-                {"id": f"video:{v.id}", "name": v.title, "type": "video", "bvid": v.bvid}
+                {"id": f"video:{v.id}", "name": v.title, "type": "video", "source_id": v.source_id}
                 for v in self.video_nodes.values()
             ],
             "edges": [
@@ -116,7 +116,7 @@ class KnowledgeGraphService:
             video_node = VideoNode(
                 id=video.id,
                 title=video.title,
-                bvid=video.bvid,
+                bvid=video.source_id,
                 concepts=concepts,
             )
             video_nodes[video.id] = video_node

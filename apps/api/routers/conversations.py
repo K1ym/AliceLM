@@ -8,13 +8,16 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from packages.db import Conversation, Message, MessageRole, User
 from packages.logging import get_logger
 from services.ai import RAGService
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 from services.ai.context_compressor import ContextCompressor, create_compressor_from_config
+
+# 控制平面
+from alice.control_plane import get_control_plane
 
 from ..deps import get_current_user, get_chat_service, get_config_service
 from ..services import ChatService, ConfigService
@@ -45,8 +48,7 @@ class MessageResponse(BaseModel):
     sources: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationResponse(BaseModel):
@@ -57,8 +59,7 @@ class ConversationResponse(BaseModel):
     updated_at: datetime
     message_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationDetailResponse(BaseModel):
@@ -69,8 +70,7 @@ class ConversationDetailResponse(BaseModel):
     updated_at: datetime
     messages: List[MessageResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ============== API ==============
@@ -202,10 +202,11 @@ async def send_message_stream(
     # 保存用户消息并更新对话标题
     service.send_user_message(conversation_id, user_id, message_content)
     
-    # 预先获取配置
-    llm_config = config_service.get_task_llm_config(user_id, "chat")
-    compress_config = config_service.get_task_llm_config(user_id, "context_compress")
-    chat_system_prompt = config_service.get_user_prompt(user_id, "chat")
+    # 使用控制平面获取 LLM 和 prompt
+    cp = get_control_plane()
+    chat_llm = await cp.create_llm_for_task("chat", user_id=user_id)
+    compress_llm = await cp.create_llm_for_task("context_compress", user_id=user_id)
+    chat_system_prompt = await cp.get_prompt("chat", user_id=user_id)
     
     # 预先获取历史和压缩信息（在流式前完成）
     all_history = service.get_messages(conversation_id, user_id, limit=1000)
@@ -220,17 +221,7 @@ async def send_message_stream(
         msgs_to_compress = [m for m in old_msgs if m["id"] > compressed_at_id]
         
         if msgs_to_compress:
-            # 创建LLM
-            if llm_config.get("api_key") and llm_config.get("base_url"):
-                temp_llm = create_llm_from_config(
-                    base_url=compress_config.get("base_url") or llm_config["base_url"],
-                    api_key=compress_config.get("api_key") or llm_config["api_key"],
-                    model=compress_config.get("model") or llm_config["model"],
-                )
-            else:
-                temp_llm = get_llm_manager()
-            
-            compressor = ContextCompressor(llm_manager=temp_llm)
+            compressor = ContextCompressor(llm_manager=compress_llm)
             result = compressor.compress(msgs_to_compress, compressed_context)
             
             # 保存压缩结果

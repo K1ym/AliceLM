@@ -13,6 +13,9 @@
 | Folders (收藏夹) | ✅ Ready | 监控管理 |
 | QA (问答) | ✅ Ready | RAG问答 |
 | Knowledge (知识图谱) | ✅ Ready | 概念关联 |
+| Agent (对话) | ✅ Ready | Agent Chat + Strategies |
+| Console (控制台) | ✅ Ready | AgentRun/Eval 监控 |
+| **ControlPlane** | ✅ Ready | 模型/工具/Prompt 配置 |
 
 ### 启动方式
 
@@ -76,7 +79,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 - [Videos API](./VIDEOS.md) - 视频CRUD、转写
 - [QA API](./QA.md) - 知识库问答、语义搜索
 - [Folders API](./FOLDERS.md) - 收藏夹管理
-- [Config](./CONFIG.md) - 配置管理 (ASR/LLM/通知)
+- [Config API](./CONFIG.md) - 配置管理 (ASR/LLM/通知)
+- [ControlPlane API](./CONTROL_PLANE.md) - 模型/工具/Prompt 配置
 
 ## 功能完成度
 

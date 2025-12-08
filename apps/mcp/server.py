@@ -56,12 +56,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "bvid": {
+                    "source_id": {
                         "type": "string",
                         "description": "B站视频BV号",
                     },
                 },
-                "required": ["bvid"],
+                "required": ["source_id"],
             },
         ),
         Tool(
@@ -70,12 +70,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "bvid": {
+                    "source_id": {
                         "type": "string",
                         "description": "B站视频BV号",
                     },
                 },
-                "required": ["bvid"],
+                "required": ["source_id"],
             },
         ),
         Tool(
@@ -179,7 +179,7 @@ async def tool_search_videos(db, tenant_id: int, args: dict) -> dict:
         "count": len(videos),
         "videos": [
             {
-                "bvid": v.bvid,
+                "source_id": v.source_id,
                 "title": v.title,
                 "author": v.author,
                 "status": v.status.value,
@@ -192,11 +192,11 @@ async def tool_search_videos(db, tenant_id: int, args: dict) -> dict:
 
 async def tool_get_video_summary(db, tenant_id: int, args: dict) -> dict:
     """获取视频摘要"""
-    bvid = args.get("bvid", "")
+    bvid = args.get("source_id", "")
     
     video = (
         db.query(Video)
-        .filter(Video.tenant_id == tenant_id, Video.bvid == bvid)
+        .filter(Video.tenant_id == tenant_id, Video.source_id == bvid)
         .first()
     )
     
@@ -218,7 +218,7 @@ async def tool_get_video_summary(db, tenant_id: int, args: dict) -> dict:
             pass
     
     return {
-        "bvid": video.bvid,
+        "source_id": video.source_id,
         "title": video.title,
         "author": video.author,
         "summary": video.summary,
@@ -232,11 +232,11 @@ async def tool_get_video_transcript(db, tenant_id: int, args: dict) -> dict:
     """获取转写文本"""
     from pathlib import Path
     
-    bvid = args.get("bvid", "")
+    bvid = args.get("source_id", "")
     
     video = (
         db.query(Video)
-        .filter(Video.tenant_id == tenant_id, Video.bvid == bvid)
+        .filter(Video.tenant_id == tenant_id, Video.source_id == bvid)
         .first()
     )
     
@@ -253,7 +253,7 @@ async def tool_get_video_transcript(db, tenant_id: int, args: dict) -> dict:
     transcript = path.read_text(encoding="utf-8")
     
     return {
-        "bvid": video.bvid,
+        "source_id": video.source_id,
         "title": video.title,
         "transcript": transcript,
         "length": len(transcript),
@@ -262,8 +262,7 @@ async def tool_get_video_transcript(db, tenant_id: int, args: dict) -> dict:
 
 async def tool_ask_knowledge(db, tenant_id: int, args: dict) -> dict:
     """知识库问答"""
-    from services.ai import RAGService
-    from services.ai.rag.service import FallbackRAGService
+    from alice.rag import RAGService, FallbackRAGService
     
     question = args.get("question", "")
     
@@ -301,7 +300,7 @@ async def tool_list_recent_videos(db, tenant_id: int, args: dict) -> dict:
         "count": len(videos),
         "videos": [
             {
-                "bvid": v.bvid,
+                "source_id": v.source_id,
                 "title": v.title,
                 "author": v.author,
                 "status": v.status.value,

@@ -6,7 +6,7 @@ Pydantic Schemas
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 
 # ========== 通用 ==========
@@ -30,15 +30,18 @@ class PaginatedResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     """登录请求"""
-    email: str
+    email: EmailStr
     password: str
 
 
 class RegisterRequest(BaseModel):
     """注册请求"""
-    email: str = Field(..., min_length=5, max_length=100)
+    email: EmailStr
     password: str = Field(..., min_length=6, max_length=100)
     username: str = Field(..., min_length=2, max_length=50)
+
+
+
 
 
 class TokenResponse(BaseModel):
@@ -55,8 +58,7 @@ class UserInfo(BaseModel):
     username: str
     tenant_id: int
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UpdateProfileRequest(BaseModel):
@@ -94,8 +96,7 @@ class VideoSummary(VideoBase):
     created_at: datetime
     processed_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VideoDetail(VideoSummary):
@@ -138,8 +139,7 @@ class FolderInfo(FolderBase):
     video_count: int = 0
     last_scan_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== 问答 ==========

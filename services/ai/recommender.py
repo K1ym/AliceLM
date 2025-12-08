@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from packages.db import Video, Tag, VideoTag
 from packages.logging import get_logger
 
-from .rag import RAGService, SearchResult
+from alice.rag import RAGService, SearchResult
 
 logger = get_logger(__name__)
 
@@ -144,7 +144,7 @@ class Recommender:
         return [
             Recommendation(
                 video_id=item["video"].id,
-                bvid=item["video"].bvid,
+                bvid=item["video"].source_id,
                 title=item["video"].title,
                 score=item["score"],
                 reason=f"共享 {len(item['tags'])} 个标签",
@@ -213,7 +213,7 @@ class Recommender:
         return [
             Recommendation(
                 video_id=v.id,
-                bvid=v.bvid,
+                bvid=v.source_id,
                 title=v.title,
                 score=0.5,
                 reason=f"同一UP主: {video.author}",
@@ -267,7 +267,7 @@ class Recommender:
         return [
             Recommendation(
                 video_id=v.id,
-                bvid=v.bvid,
+                bvid=v.source_id,
                 title=v.title,
                 score=0.5,
                 reason=f"标题包含: {concept}",

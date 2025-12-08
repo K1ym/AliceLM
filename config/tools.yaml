@@ -1,0 +1,141 @@
+# AliceLM Tools Configuration
+# 工具配置 + 场景绑定
+
+tools:
+  # ========== 基础工具 ==========
+  - name: calculator
+    impl: alice.agent.tools.ext.basic.CalculatorTool
+    enabled: true
+    scenes: ["chat", "research", "video"]
+    description: "数学计算"
+
+  - name: current_time
+    impl: alice.agent.tools.ext.basic.CurrentTimeTool
+    enabled: true
+    scenes: ["chat", "research", "video", "timeline"]
+    description: "获取当前时间"
+
+  # ========== 视频/知识库工具 ==========
+  - name: search_videos
+    impl: alice.agent.tools.basic.SearchVideosTool
+    enabled: true
+    scenes: ["chat", "library", "video", "graph"]
+    description: "搜索视频知识库"
+
+  - name: get_video_detail
+    impl: alice.agent.tools.basic.GetVideoDetailTool
+    enabled: true
+    scenes: ["chat", "library", "video"]
+    description: "获取视频详情"
+
+  - name: ask_video
+    impl: alice.agent.tools.basic.AskVideoTool
+    enabled: true
+    scenes: ["chat", "video"]
+    description: "针对特定视频提问"
+
+  - name: search_knowledge_graph
+    impl: alice.agent.tools.basic.SearchGraphTool
+    enabled: true
+    scenes: ["chat", "graph", "research"]
+    description: "搜索知识图谱"
+
+  # ========== 搜索工具 ==========
+  - name: web_search
+    impl: alice.agent.tools.search.WebSearchTool
+    enabled: true
+    scenes: ["chat", "research"]
+    description: "网页搜索"
+
+  - name: deep_web_research
+    impl: alice.agent.tools.search.DeepWebResearchTool
+    enabled: true
+    scenes: ["research"]
+    description: "深度 Web 研究（多步搜索+聚合）"
+
+  # ========== HTTP 工具 ==========
+  - name: http_request
+    impl: alice.agent.tools.ext.http_web.HttpRequestTool
+    enabled: true
+    scenes: ["research", "console"]
+    description: "发送 HTTP 请求"
+
+  - name: web_scrape
+    impl: alice.agent.tools.ext.http_web.WebScrapeTool
+    enabled: true
+    scenes: ["research"]
+    description: "抓取网页内容"
+
+  # ========== 危险工具（默认禁用）==========
+  - name: shell
+    impl: alice.agent.tools.ext.unsafe.ShellTool
+    enabled: false
+    unsafe: true
+    scenes: ["console"]
+    description: "执行 Shell 命令"
+
+  - name: python_repl
+    impl: alice.agent.tools.ext.unsafe.PythonReplTool
+    enabled: false
+    unsafe: true
+    scenes: ["console"]
+    description: "执行 Python 代码"
+
+  - name: file_read
+    impl: alice.agent.tools.ext.unsafe.FileReadTool
+    enabled: false
+    unsafe: true
+    scenes: ["console"]
+    description: "读取文件"
+
+  - name: file_write
+    impl: alice.agent.tools.ext.unsafe.FileWriteTool
+    enabled: false
+    unsafe: true
+    scenes: ["console"]
+    description: "写入文件"
+
+# ========== 场景默认工具集 ==========
+scene_defaults:
+  chat:
+    - calculator
+    - current_time
+    - search_videos
+    - get_video_detail
+    - ask_video
+    - search_knowledge_graph
+    - web_search
+
+  research:
+    - calculator
+    - current_time
+    - search_videos
+    - search_knowledge_graph
+    - web_search
+    - deep_web_research
+    - http_request
+    - web_scrape
+
+  video:
+    - calculator
+    - current_time
+    - search_videos
+    - get_video_detail
+    - ask_video
+
+  library:
+    - search_videos
+    - get_video_detail
+
+  graph:
+    - search_videos
+    - search_knowledge_graph
+
+  timeline:
+    - current_time
+
+  console:
+    - calculator
+    - current_time
+    - http_request
+    # unsafe tools need explicit enable

@@ -39,7 +39,7 @@ async def get_concept_videos(
     return [
         {
             "id": v.id,
-            "bvid": v.bvid,
+            "source_id": v.source_id,
             "title": v.title,
             "author": v.author,
         }

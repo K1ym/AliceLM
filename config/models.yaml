@@ -1,0 +1,82 @@
+# AliceLM Model Profiles
+# 模型配置目录 - 定义所有可用的模型 profile
+
+model_profiles:
+  # ========== Chat Models ==========
+  alice.chat.main:
+    kind: chat
+    provider: openai
+    model: gpt-4.1
+    max_input_tokens: 128000
+    max_output_tokens: 4096
+    description: "主力对话模型，用于 Agent 主循环"
+
+  alice.chat.fast:
+    kind: chat
+    provider: openai
+    model: gpt-4o-mini
+    max_input_tokens: 128000
+    max_output_tokens: 16384
+    description: "快速响应模型，用于简单问答和标签提取"
+
+  alice.chat.deepseek:
+    kind: chat
+    provider: deepseek
+    model: deepseek-chat
+    max_input_tokens: 64000
+    max_output_tokens: 8192
+    description: "DeepSeek 模型，高性价比"
+
+  alice.chat.reasoner:
+    kind: chat
+    provider: deepseek
+    model: deepseek-reasoner
+    max_input_tokens: 64000
+    max_output_tokens: 8192
+    description: "推理模型，用于深度研究"
+
+  # ========== Embedding Models ==========
+  alice.embed.default:
+    kind: embedding
+    provider: openai
+    model: text-embedding-3-large
+    embedding_dim: 3072
+    description: "默认向量化模型"
+
+  alice.embed.small:
+    kind: embedding
+    provider: openai
+    model: text-embedding-3-small
+    embedding_dim: 1536
+    description: "轻量向量化模型"
+
+  # ========== ASR Models ==========
+  alice.asr.local:
+    kind: asr
+    provider: faster_whisper
+    model: medium
+    description: "本地 Faster-Whisper"
+
+  alice.asr.groq:
+    kind: asr
+    provider: groq_whisper
+    model: whisper-large-v3-turbo
+    description: "Groq Whisper API，速度快"
+
+  alice.asr.openai:
+    kind: asr
+    provider: openai_whisper
+    model: whisper-1
+    description: "OpenAI Whisper API"
+
+# ========== Task → Profile 默认映射 ==========
+task_defaults:
+  chat: alice.chat.main
+  summary: alice.chat.fast
+  knowledge: alice.chat.main
+  mindmap: alice.chat.fast
+  tagger: alice.chat.fast
+  context_compress: alice.chat.fast
+  research: alice.chat.reasoner
+  embedding: alice.embed.default
+  asr: alice.asr.local
