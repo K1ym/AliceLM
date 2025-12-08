@@ -26,3 +26,12 @@
 - 登录与鉴权流程未检查 `user.is_active`，`AuthService.authenticate` 和 `get_current_user` 对被停用账户仍返回成功结果。【F:apps/api/services/auth_service.py†L50-L68】【F:apps/api/deps.py†L36-L88】
 - 被封禁或停用的用户依旧可以凭旧密码或 Token 继续访问接口，管理员无法即时阻断访问。
 - 建议：在登录前、刷新 Token 和每次取当前用户时检查 `is_active`，对不活跃账号返回 403/401 并记录审计日志。
+
+### 6. Docker Compose 指向不存在的 Worker 入口
+- `docker-compose.yml` 的 `worker` 服务命令为 `python -m services.worker`，但仓库中不存在 `services/worker.py` 或同名模块，容器启动会立即因模块缺失而退出，后台任务（下载、转写、清理）无法运行。【F:docker-compose.yml†L23-L38】【94b30c†L1-L2】
+- 建议：补充实际的 worker 入口（如 Celery/自定义队列消费进程），或调整 Compose 命令到现有调度器/管道启动脚本，并在 CI 中添加存在性/启动校验。
+
+### 7. 多租户数据共用全局下载目录，文件名仅用 BV 号
+- 视频下载与处理管道默认目录为 `data/videos`、`data/audio`、`data/transcripts`，子目录只按 `bvid` 或 `source_id` 命名，没有按租户隔离，同一 BV 号在不同租户间会覆盖或复用同一份音视频和转写结果。【F:services/processor/pipeline.py†L29-L42】【F:services/processor/downloader.py†L29-L52】
+- 共享目录导致租户间数据污染（缓存/转写被复用或删除）、以及通过路径推断他人处理过的内容，属于结构性越权风险。
+- 建议：目录结构加上 `tenant_id/slug` 前缀并在数据库中记录完整路径；旧文件迁移或重新生成，避免跨租户共享。
