@@ -12,9 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from packages.db import Tenant
+from packages.db import Tenant, User
 
-from ..deps import get_current_tenant, get_db
+from ..deps import get_current_tenant, get_admin_user, get_db
 
 router = APIRouter()
 
@@ -96,6 +96,7 @@ async def list_agent_runs(
     scene: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """
@@ -130,6 +131,7 @@ async def list_agent_runs(
 
 @router.get("/agent-runs/stats", response_model=AgentRunStatsResponse)
 async def get_agent_run_stats(
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """
@@ -146,6 +148,7 @@ async def get_agent_run_stats(
 @router.get("/agent-runs/{run_id}", response_model=AgentRunDetailResponse)
 async def get_agent_run_detail(
     run_id: str,
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """
@@ -185,6 +188,7 @@ async def get_agent_run_detail(
 @router.post("/eval/run-suite", response_model=EvalSuiteResultResponse)
 async def run_eval_suite(
     request: EvalSuiteRequest,
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
@@ -239,6 +243,7 @@ async def run_eval_suite(
 
 @router.post("/eval/run-default")
 async def run_default_eval(
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
@@ -270,6 +275,7 @@ async def run_default_eval(
 @router.get("/tools")
 async def list_tools(
     scene: str = "console",
+    admin: User = Depends(get_admin_user),
     tenant: Tenant = Depends(get_current_tenant),
 ):
     """

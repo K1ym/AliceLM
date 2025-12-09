@@ -168,14 +168,18 @@ class AliceAgentCore:
                 for tc in tool_calls:
                     tool_name = tc.get("name", "")
                     tool_args = tc.get("arguments", {})
-                    
+
+                    # 注入运行时上下文（tenant_id）到工具参数
+                    if task.tenant_id and "tenant_id" not in tool_args:
+                        tool_args["tenant_id"] = int(task.tenant_id)
+
                     steps.append(AgentStep(
                         step_idx=len(steps),
                         thought=f"调用工具 {tool_name}",
                         tool_name=tool_name,
                         tool_args=tool_args,
                     ))
-                    
+
                     # 执行工具
                     tool_result = await self.tool_router.execute_safe(tool_name, tool_args)
                     steps[-1].observation = str(tool_result.get("result", tool_result.get("error", "")))

@@ -6,6 +6,7 @@
 import json
 from typing import Optional
 
+from packages.crypto import decrypt_value
 from packages.logging import get_logger
 
 from ..repositories.config_repo import ConfigRepository
@@ -52,7 +53,7 @@ class ConfigService:
                 if endpoint:
                     return {
                         "base_url": endpoint["base_url"],
-                        "api_key": endpoint["api_key"],
+                        "api_key": decrypt_value(endpoint.get("api_key")) or "",
                         "model": task_config.get("model", ""),
                     }
             else:
@@ -66,7 +67,7 @@ class ConfigService:
         llm_config = self.get_config_dict(user_id, "llm")
         return {
             "base_url": llm_config.get("base_url", ""),
-            "api_key": llm_config.get("api_key", ""),
+            "api_key": decrypt_value(llm_config.get("api_key")) or "",
             "model": llm_config.get("model", "gpt-4o-mini"),
         }
     

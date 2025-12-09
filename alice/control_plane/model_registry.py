@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 import yaml
 
+from packages.crypto import decrypt_value
 from packages.logging import get_logger
 from .types import ModelProfile, ResolvedModel, ModelKind
 
@@ -154,10 +155,13 @@ class ModelRegistry:
                 llm_config = self._config_service.get_config_dict(user_id, "llm")
                 if llm_config:
                     base_url = llm_config.get("base_url") or base_url
-                    api_key = llm_config.get("api_key") or api_key
+                    # 解密存储的 api_key
+                    encrypted_key = llm_config.get("api_key")
+                    if encrypted_key:
+                        api_key = decrypt_value(encrypted_key) or api_key
             except Exception:
                 pass
-        
+
         return base_url, api_key
     
     def _infer_kind_from_task(self, task_type: str) -> str:

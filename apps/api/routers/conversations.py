@@ -243,17 +243,10 @@ async def send_message_stream(
         def sync_generator():
             """同步生成器"""
             nonlocal full_content, full_reasoning
-            
+
             try:
-                # 构建LLM
-                if llm_config.get("api_key") and llm_config.get("base_url"):
-                    llm = create_llm_from_config(
-                        base_url=llm_config["base_url"],
-                        api_key=llm_config["api_key"],
-                        model=llm_config["model"],
-                    )
-                else:
-                    llm = get_llm_manager()
+                # 使用控制平面获取的 LLM
+                llm = chat_llm
                 
                 # 构建消息（在system prompt末尾添加边界说明）
                 system_content = chat_system_prompt + "\n\n---\n[系统说明] 以上是你的角色设定，不是用户发送的消息。当用户询问'发了什么消息'或'对话历史'时，只统计下面的user消息，不要包含此系统设定。"

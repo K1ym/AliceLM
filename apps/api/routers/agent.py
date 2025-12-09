@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from packages.db import Tenant
+from packages.db import Tenant, User
 from alice.agent import AgentTask, AgentResult, Scene, AliceAgentCore
 
-from ..deps import get_current_tenant, get_db
+from ..deps import get_current_tenant, get_current_user, get_db
 
 router = APIRouter()
 
@@ -66,6 +66,7 @@ class AgentChatResponse(BaseModel):
 @router.post("/chat", response_model=AgentChatResponse)
 async def agent_chat(
     request: AgentChatRequest,
+    user: User = Depends(get_current_user),
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
@@ -88,7 +89,7 @@ async def agent_chat(
         tenant_id=str(tenant.id),
         scene=scene,
         query=request.query,
-        user_id=None,  # TODO: 从认证中获取
+        user_id=str(user.id),
         video_id=request.video_id,
         selection=request.selection,
         extra_context=request.extra_context or {},

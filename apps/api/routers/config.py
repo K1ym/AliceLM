@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from packages.db import User, UserConfig
 from packages.logging import get_logger
+from packages.crypto import encrypt_value, decrypt_value
 
 from ..deps import get_db, get_current_user, get_config_service
 from ..services import ConfigService
@@ -229,7 +230,7 @@ def get_task_llm_config(db: Session, user_id: int, task_type: str) -> dict:
             if endpoint:
                 return {
                     "base_url": endpoint["base_url"],
-                    "api_key": endpoint["api_key"],
+                    "api_key": decrypt_value(endpoint.get("api_key")) or "",
                     "model": task_config.get("model", ""),
                 }
         else:
@@ -244,7 +245,7 @@ def get_task_llm_config(db: Session, user_id: int, task_type: str) -> dict:
     llm_config = get_config_dict(db, user_id, "llm")
     return {
         "base_url": llm_config.get("base_url", ""),
-        "api_key": llm_config.get("api_key", ""),
+        "api_key": decrypt_value(llm_config.get("api_key")) or "",
         "model": llm_config.get("model", "gpt-4o-mini"),
     }
 
@@ -384,20 +385,23 @@ async def update_llm_config(
         endpoint = next((ep for ep in endpoints_list if ep.get("id") == config.endpoint_id), None)
         if endpoint:
             data["base_url"] = endpoint["base_url"]
-            data["api_key"] = endpoint["api_key"]
+            data["api_key"] = endpoint["api_key"]  # 已加密存储
         else:
             raise HTTPException(status_code=404, detail="端点不存在")
     else:
         # 使用预设提供商，需要api_key
         if not config.api_key and existing.get("api_key"):
-            data["api_key"] = existing["api_key"]
-        
+            data["api_key"] = existing["api_key"]  # 保留已加密的值
+        elif config.api_key:
+            # 新的 api_key，加密存储
+            data["api_key"] = encrypt_value(config.api_key)
+
         if not data.get("api_key"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="API密钥不能为空",
             )
-    
+
     set_user_config(db, user.id, "llm", json.dumps(data))
     
     return ConfigUpdateResponse(success=True, message="LLM配置已更新")
@@ -491,11 +495,11 @@ async def create_llm_endpoint(
         "id": endpoint_id,
         "name": endpoint.name,
         "base_url": endpoint.base_url.rstrip("/"),
-        "api_key": endpoint.api_key,
+        "api_key": encrypt_value(endpoint.api_key),  # 加密存储
         "models": [],
     }
-    
-    # 尝试获取模型列表
+
+    # 尝试获取模型列表（使用原始 api_key）
     try:
         models = await _fetch_models_from_endpoint(new_endpoint["base_url"], endpoint.api_key)
         new_endpoint["models"] = [m["id"] for m in models]
@@ -555,9 +559,10 @@ async def refresh_endpoint_models(
     if not endpoint:
         raise HTTPException(status_code=404, detail="端点不存在")
     
-    # 获取模型列表
+    # 获取模型列表（解密 api_key）
     try:
-        models = await _fetch_models_from_endpoint(endpoint["base_url"], endpoint["api_key"])
+        decrypted_key = decrypt_value(endpoint["api_key"])
+        models = await _fetch_models_from_endpoint(endpoint["base_url"], decrypted_key)
         endpoint["models"] = [m["id"] for m in models]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"获取模型失败: {str(e)}")
@@ -731,7 +736,7 @@ async def fetch_llm_models(
         
         # 确定使用哪个base_url和api_key
         base_url = request.base_url or existing.get("base_url")
-        api_key = request.api_key or existing.get("api_key")
+        api_key = request.api_key or decrypt_value(existing.get("api_key"))
         
         if not base_url:
             raise HTTPException(status_code=400, detail="请先配置API Base URL")
