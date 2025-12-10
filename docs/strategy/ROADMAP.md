@@ -64,6 +64,44 @@
 - 并行与策略：简单节点图（LangGraph 风格）支持并行工具与条件路由；Research/Timeline 策略可自适应选工具包。
 - Safety & Guardrails：敏感操作二次确认、参数审计、LLM 安全级别选择；离线回放与审计日志。
 
+### F-Track：Jarvis UI/UX 重构（并行前端轨道）
+
+> 与后端里程碑并行推进，不阻塞 M2-M4。
+
+**目标**：打造专业的 Jarvis 风格界面，对话驱动，统一入口。
+
+**产品定位**：
+- Alice = 个人 Jarvis，不是"学习工具"
+- 弱化学习痕迹，强调任务与洞察
+- 对话是核心入口，一切操作可通过对话完成
+
+**核心设计决策**：
+- **对话即 Palette**：输入框 = 对话 + Command Palette 统一入口
+  - 默认自然语言对话 → 走 AI
+  - `/` 或 `Cmd+K` → 命令模式，快速操作
+  - AI 返回可执行建议（点击即执行）
+- **精简路由**：仅 `/`(对话)、`/library`(知识库)、`/settings`
+- **统一知识库**：Library 合并视频/文档/笔记/链接，Video 详情作为 Drawer
+- **洞察呈现**：Graph/Timeline 作为 Overlay/洞察卡，不是独立页面
+- **三栏布局**：左导航 + 主画布(对话/库切换) + 右侧动态面板(引用/工具/确认)
+
+**技术栈**：
+- 保留 Next.js 15 + React 19 + Radix + Tailwind v4
+- 引入 shadcn/ui 基础组件
+- Framer Motion 克制动效
+- Design Tokens 规范化
+
+**分阶段落地**：
+- **F1 设计基座**：调性定义、tokens、基础组件、Storybook
+- **F2 核心页面**：Chat + Library + 右侧面板 + Command 模式
+- **F3 扩展**：Overlay(Graph/Timeline)、移动端适配、动效打磨
+
+**设计参考**：Perplexity（对话+引用）、Readwise（信息密度）、Linear（设计系统）、Raycast（Command）
+
+**与后端依赖**：
+- 需稳定 API 契约：`/videos`、`/agent`、`/knowledge`
+- 新增：Agent 返回 `suggested_actions` 支持可执行建议
+
 ### M5：评测与自治（持续）
 - Eval：基于 `alice/eval` 增加多步 Agent 回归集、工具调用金标、超时与异常覆盖。
 - Autopilot：低风险场景允许自动执行/重试；高风险保留人类确认；配置化 SLA（超时、重试、并发度）。

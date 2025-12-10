@@ -53,6 +53,9 @@ class AgentStepResponse(BaseModel):
     tool_args: Optional[dict] = None
     observation: Optional[str] = None
     error: Optional[str] = None
+    kind: str = "tool"  # tool/thought/confirm
+    requires_user_confirm: bool = False
+    duration_ms: Optional[int] = None  # 步骤耗时(毫秒)
 
 
 class AgentChatResponse(BaseModel):
@@ -60,6 +63,13 @@ class AgentChatResponse(BaseModel):
     answer: str
     citations: List[AgentCitationResponse] = []
     steps: List[AgentStepResponse] = []
+    # 任务规划与安全
+    plan_json: Optional[str] = None  # 任务规划JSON
+    safety_level: str = "normal"  # low/normal/high
+    # 观测指标
+    error_code: Optional[str] = None  # 错误码
+    total_duration_ms: Optional[int] = None  # 总执行耗时(毫秒)
+    token_usage: Optional[dict] = None  # {prompt_tokens, completion_tokens}
     # 调试信息
     strategy: Optional[str] = None
     processing_time_ms: Optional[int] = None
@@ -129,9 +139,17 @@ async def agent_chat(
                     tool_args=s.tool_args,
                     observation=s.observation,
                     error=s.error,
+                    kind=getattr(s, "kind", "tool"),
+                    requires_user_confirm=getattr(s, "requires_user_confirm", False),
+                    duration_ms=getattr(s, "duration_ms", None),
                 )
                 for s in result.steps
             ],
+            plan_json=getattr(result, "plan_json", None),
+            safety_level=getattr(result, "safety_level", "normal"),
+            error_code=getattr(result, "error_code", None),
+            total_duration_ms=getattr(result, "total_duration_ms", None),
+            token_usage=getattr(result, "token_usage", None),
             strategy=scene.value,
             processing_time_ms=processing_time_ms,
         )
