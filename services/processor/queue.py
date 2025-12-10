@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from packages.logging import get_logger
+from alice.errors import AliceError, NetworkError
 
 logger = get_logger(__name__)
 
@@ -123,8 +124,11 @@ class VideoProcessingQueue:
                     logger.info("video_processing_completed", video_id=video_id)
                 else:
                     raise ValueError(f"Video {video_id} not found")
+        except (NetworkError, OSError, IOError) as e:
+            logger.error("video_processing_failed_network", video_id=video_id, error=str(e), exc_info=True)
+            raise
         except Exception as e:
-            logger.error("video_processing_failed", video_id=video_id, error=str(e))
+            logger.exception("video_processing_failed_unexpected", video_id=video_id)
             raise
     
     def _on_task_complete(self, video_id: int, future: Future):

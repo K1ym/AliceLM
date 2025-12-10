@@ -5,19 +5,23 @@ Stage S2: AliceAgentCore 统一入口
 所有 Agent 请求都通过此路由，统一构造 AgentTask 并调用 AliceAgentCore。
 """
 
+import logging
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from packages.db import Tenant, User
 from alice.agent import AgentTask, AgentResult, Scene, AliceAgentCore
+from alice.errors import AliceError, LLMError, NetworkError
 
 from ..deps import get_current_tenant, get_current_user, get_db
+from ..exceptions import AppException, ProcessingException, ExternalServiceException
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============== Request/Response Schemas ==============
@@ -132,11 +136,14 @@ async def agent_chat(
             processing_time_ms=processing_time_ms,
         )
         
+    except (LLMError, NetworkError) as e:
+        logger.error("agent_chat_llm_error", exc_info=True)
+        raise ExternalServiceException("LLM", str(e))
+    except AppException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent 执行失败: {str(e)}",
-        )
+        logger.exception("agent_chat_unexpected")
+        raise ProcessingException(f"Agent 执行失败: {str(e)}")
 
 
 @router.get("/strategies")

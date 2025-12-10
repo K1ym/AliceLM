@@ -111,7 +111,7 @@ class TestDatabaseSetup:
         # 验证隔离
         assert v1.tenant_id != v2.tenant_id
         
-        # 同一租户下bvid唯一
+        # 同一租户下 source_type + source_id 唯一
         v3 = Video(source_type="bilibili", source_id="BV789", title="Video3", author="C", tenant_id=t1.id)
         db_session.add(v3)
         db_session.commit()

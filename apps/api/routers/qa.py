@@ -3,6 +3,7 @@
 P3-03: 问答API
 """
 
+import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,10 +14,17 @@ from services.ai import RAGService, Summarizer
 
 from ..deps import get_current_tenant, get_video_service, get_db
 from ..services import VideoService
-from ..exceptions import NotFoundException
+from ..exceptions import (
+    AppException,
+    NotFoundException,
+    ProcessingException,
+    ExternalServiceException,
+)
 from ..schemas import QARequest, QAResponse, QASource, SearchRequest, SearchResult
+from alice.errors import LLMError, NetworkError
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 服务实例（延迟初始化）
 _rag_service = None
@@ -80,11 +88,14 @@ async def ask_question(
             conversation_id=result.get("conversation_id"),
         )
         
+    except (LLMError, NetworkError) as e:
+        logger.error("qa_ask_llm_error", exc_info=True)
+        raise ExternalServiceException("RAG", str(e))
+    except AppException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"问答服务异常: {e}",
-        )
+        logger.exception("qa_ask_unexpected")
+        raise ProcessingException(f"问答服务异常: {e}")
 
 
 @router.post("/search", response_model=List[SearchResult])
@@ -122,11 +133,14 @@ async def search_videos(
             for r in results
         ]
         
+    except (LLMError, NetworkError) as e:
+        logger.error("qa_search_llm_error", exc_info=True)
+        raise ExternalServiceException("RAG", str(e))
+    except AppException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"搜索服务异常: {e}",
-        )
+        logger.exception("qa_search_unexpected")
+        raise ProcessingException(f"搜索服务异常: {e}")
 
 
 @router.post("/summarize")
@@ -177,8 +191,11 @@ async def summarize_video(
             "tags": analysis.tags,
         }
         
+    except (LLMError, NetworkError) as e:
+        logger.error("qa_summarize_llm_error", exc_info=True)
+        raise ExternalServiceException("Summarizer", str(e))
+    except AppException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"摘要生成失败: {e}",
-        )
+        logger.exception("qa_summarize_unexpected")
+        raise ProcessingException(f"摘要生成失败: {e}")

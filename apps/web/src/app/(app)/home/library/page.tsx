@@ -143,10 +143,14 @@ function LibraryContent() {
     }
   }
 
-  async function handleImportVideo(bvid: string) {
-    setImportingVideo(bvid);
+  async function handleImportVideo(source_id: string) {
+    setImportingVideo(source_id);
     try {
-      await importApi.single({ url: `https://www.bilibili.com/video/${bvid}` });
+      await importApi.single({
+        source_type: "bilibili",
+        source_id,
+        url: `https://www.bilibili.com/video/${source_id}`,
+      });
       alert("导入成功");
     } catch {
       alert("导入失败");
@@ -311,10 +315,10 @@ function LibraryContent() {
             <div className="space-y-3">
               {folderDetail.videos.map((video) => (
                 <BilibiliVideoCard
-                  key={video.bvid}
+                  key={video.source_id || video.bvid}
                   video={video}
                   onImport={handleImportVideo}
-                  importing={importingVideo === video.bvid}
+                  importing={importingVideo === (video.source_id || video.bvid)}
                 />
               ))}
             </div>

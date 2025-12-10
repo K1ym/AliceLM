@@ -210,3 +210,22 @@ alicelm-venv/
 *.local
 third_party/
 config/local/
+
+# ===================
+# External tools (not part of project)
+# ===================
+codexmcp/
+uv.lock
+
+# ===================
+# Editor swap files
+# ===================
+*.swp
+*.swo
+*~
+
+# ===================
+# IDE/Agent specific
+# ===================
+.windsurf/
+.claude/

@@ -71,7 +71,8 @@
   "items": [
     {
       "id": 1,
-      "bvid": "BV1xx411c7mD",
+      "source_type": "bilibili",
+      "source_id": "BV1xx411c7mD",
       "title": "视频标题",
       "author": "UP主名称",
       "duration": 754,
@@ -107,7 +108,8 @@ const { data } = await videosApi.list({
 ```json
 {
   "id": 1,
-  "bvid": "BV1xx411c7mD",
+  "source_type": "bilibili",
+  "source_id": "BV1xx411c7mD",
   "title": "视频标题",
   "author": "UP主名称",
   "duration": 754,
@@ -138,7 +140,8 @@ const { data } = await videosApi.list({
 
 ```json
 {
-  "bvid": "BV1xx411c7mD",
+  "source_type": "bilibili",
+  "source_id": "BV1xx411c7mD",
   "title": "视频标题",
   "transcript": "完整的转写文本...",
   "segments": [
@@ -181,7 +184,8 @@ data.segments.map(seg => (
 
 ```json
 {
-  "bvid": "BV1xx411c7mD",
+  "source_type": "bilibili",
+  "source_id": "BV1xx411c7mD",
   "title": "视频标题",
   "author": "UP主",
   "duration": 754,

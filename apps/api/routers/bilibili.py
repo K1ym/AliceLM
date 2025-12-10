@@ -118,7 +118,8 @@ async def get_bilibili_folders(
 
 class BilibiliVideoInfo(BaseModel):
     """B站视频信息"""
-    bvid: str
+    source_type: str = "bilibili"
+    source_id: str
     title: str
     author: str
     duration: int
@@ -151,7 +152,8 @@ async def get_folder_videos(
         folder_type=folder_type,
         videos=[
             BilibiliVideoInfo(
-                bvid=v.bvid,
+                source_type=v.source_type,
+                source_id=v.source_id,
                 title=v.title,
                 author=v.author,
                 duration=v.duration,

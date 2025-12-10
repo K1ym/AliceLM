@@ -49,7 +49,10 @@ export const videosApi = {
 
 export const importApi = {
   single: (request: VideoImportRequest) =>
-    client.post<VideoImportResponse>("/videos", request),
+    client.post<VideoImportResponse>("/videos", {
+      source_type: request.source_type || "bilibili",
+      ...request,
+    }),
   
   batch: (urls: string[]) =>
     client.post("/videos/batch", urls),

@@ -21,9 +21,9 @@ class VideoService:
     def __init__(self, repo: VideoRepository):
         self.repo = repo
     
-    async def parse_bvid(self, url_or_text: str) -> str:
-        """解析 BV 号"""
-        url_or_text = url_or_text.strip()
+    async def _parse_bilibili_bvid(self, url_or_text: str) -> str:
+        """解析 BV 号，兼容 b23 短链"""
+        url_or_text = (url_or_text or "").strip()
         
         # 如果包含b23.tv短链接，先解析真实URL
         b23_match = re.search(r'https?://b23\.tv/([a-zA-Z0-9]+)', url_or_text)
@@ -44,8 +44,10 @@ class VideoService:
     
     async def import_video(
         self,
-        url: str,
         tenant: Tenant,
+        source_type: str = "bilibili",
+        source_id: Optional[str] = None,
+        url: Optional[str] = None,
         auto_process: bool = True,
     ) -> Tuple[Video, bool]:
         """
@@ -54,34 +56,42 @@ class VideoService:
         Returns:
             (Video, is_new): 视频对象和是否为新创建
         """
-        bvid = await self.parse_bvid(url)
+        # 兼容 bvid 作为 source_id（B 站）
+        if not source_id:
+            if source_type == "bilibili" and url:
+                source_id = await self._parse_bilibili_bvid(url)
+            elif not source_id:
+                raise ValueError("缺少 source_id 或可解析的 url")
 
         # 检查是否已存在
-        existing = self.repo.get_by_source(tenant.id, "bilibili", bvid)
+        existing = self.repo.get_by_source(tenant.id, source_type, source_id)
         if existing:
             return existing, False
 
-        # 获取视频信息
-        video_info = await self._fetch_video_info(bvid)
+        # 获取视频信息（仅 B 站场景）
+        video_info: dict = {}
+        if source_type == "bilibili":
+            video_info = await self._fetch_bilibili_info(source_id)
 
         # 创建视频记录
         video = self.repo.create(
             tenant_id=tenant.id,
-            source_type="bilibili",
-            source_id=bvid,
-            title=video_info.get("title", bvid),
-            author=video_info.get("owner", {}).get("name", ""),
-            cover_url=video_info.get("pic", ""),
-            duration=video_info.get("duration", 0),
+            source_type=source_type,
+            source_id=source_id,
+            source_url=video_info.get("short_link_v2") if video_info else url,
+            title=video_info.get("title", source_id),
+            author=video_info.get("owner", {}).get("name", "") if video_info else "",
+            cover_url=video_info.get("pic", "") if video_info else "",
+            duration=video_info.get("duration", 0) if video_info else 0,
             status=VideoStatus.PENDING if auto_process else VideoStatus.IMPORTED,
         )
 
-        logger.info("video_imported", video_id=video.id, source_id=bvid)
+        logger.info("video_imported", video_id=video.id, source_type=source_type, source_id=source_id)
         
         return video, True
     
-    async def _fetch_video_info(self, bvid: str) -> dict:
-        """获取视频信息"""
+    async def _fetch_bilibili_info(self, bvid: str) -> dict:
+        """获取B站视频信息"""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
@@ -92,7 +102,7 @@ class VideoService:
                 if data.get("code") == 0:
                     return data.get("data", {})
         except Exception as e:
-            logger.warning("fetch_video_info_failed", bvid=bvid, error=str(e))
+            logger.warning("fetch_video_info_failed", source_id=bvid, error=str(e))
         return {}
     
     def get_video(self, video_id: int, tenant_id: int) -> Optional[Video]:

@@ -20,7 +20,8 @@ logger = get_logger(__name__)
 class Recommendation:
     """推荐结果"""
     video_id: int
-    bvid: str
+    source_type: str
+    source_id: str
     title: str
     score: float
     reason: str  # 推荐理由
@@ -144,7 +145,8 @@ class Recommender:
         return [
             Recommendation(
                 video_id=item["video"].id,
-                bvid=item["video"].source_id,
+                source_type=item["video"].source_type,
+                source_id=item["video"].source_id,
                 title=item["video"].title,
                 score=item["score"],
                 reason=f"共享 {len(item['tags'])} 个标签",
@@ -176,10 +178,16 @@ class Recommender:
         recommendations = []
         for r in results:
             if r.video_id and r.video_id not in exclude_ids:
+                # 补充源信息
+                matched = self.db.query(Video).filter(Video.id == r.video_id).first()
+                source_type = matched.source_type if matched else "bilibili"
+                source_id = matched.source_id if matched else ""
+
                 recommendations.append(Recommendation(
                     video_id=r.video_id,
-                    bvid="",  # 需要从数据库获取
-                    title=r.video_title or "",
+                    source_type=source_type,
+                    source_id=source_id,
+                    title=r.video_title or (matched.title if matched else ""),
                     score=r.score,
                     reason="内容相似",
                 ))
@@ -213,7 +221,8 @@ class Recommender:
         return [
             Recommendation(
                 video_id=v.id,
-                bvid=v.source_id,
+                source_type=v.source_type,
+                source_id=v.source_id,
                 title=v.title,
                 score=0.5,
                 reason=f"同一UP主: {video.author}",
@@ -244,7 +253,8 @@ class Recommender:
             return [
                 Recommendation(
                     video_id=r.video_id or 0,
-                    bvid="",
+                    source_type=(self.db.query(Video).filter(Video.id == r.video_id).first().source_type if r.video_id else "bilibili"),
+                    source_id=(self.db.query(Video).filter(Video.id == r.video_id).first().source_id if r.video_id else ""),
                     title=r.video_title or "",
                     score=r.score,
                     reason=f"包含概念: {concept}",
@@ -267,7 +277,8 @@ class Recommender:
         return [
             Recommendation(
                 video_id=v.id,
-                bvid=v.source_id,
+                source_type=v.source_type,
+                source_id=v.source_id,
                 title=v.title,
                 score=0.5,
                 reason=f"标题包含: {concept}",

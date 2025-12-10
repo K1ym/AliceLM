@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from packages.config import get_config
 from packages.logging import get_logger
+from alice.errors import AliceError, LLMError, LLMConnectionError, NetworkError
 
 from .base import LLMProvider, LLMResponse, Message
 
@@ -104,9 +105,12 @@ class AnthropicProvider(LLMProvider):
 
             return result
 
-        except Exception as e:
-            logger.error("llm_error", provider=self.name, error=str(e))
+        except (LLMError, LLMConnectionError, NetworkError):
+            logger.exception("llm_error", provider=self.name)
             raise
+        except Exception as e:
+            logger.exception("llm_error_unexpected", provider=self.name)
+            raise LLMError(str(e)) from e
 
     def is_available(self) -> bool:
         """检查是否可用"""

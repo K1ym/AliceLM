@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from packages.logging import get_logger
+from alice.errors import AliceError, LLMError, LLMConnectionError, NetworkError
 
 from .llm import LLMManager, Message
 
@@ -73,8 +74,8 @@ def _get_summary_quick_prompt() -> str:
         prompt = cp.get_prompt_sync("summary_quick")
         if prompt:
             return prompt
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("summary_quick_prompt_fallback", error=str(e))
     
     return "你是一个专业的内容摘要助手，善于提炼核心信息。"
 
@@ -97,8 +98,12 @@ class Summarizer:
                 from alice.control_plane import get_control_plane
                 cp = get_control_plane()
                 self.llm = cp.create_llm_for_task_sync("summary")
-            except Exception:
+            except (LLMError, LLMConnectionError, NetworkError) as e:
+                logger.error("summarizer_llm_init_failed", error=str(e), exc_info=True)
+                raise
+            except Exception as e:
                 # 回退到默认
+                logger.exception("summarizer_llm_init_unexpected")
                 self.llm = LLMManager()
 
     def analyze(
@@ -136,9 +141,12 @@ class Summarizer:
             result = self._parse_response(response.content)
             logger.info("summarize_complete", title=title, summary_length=len(result.summary))
             return result
-        except Exception as e:
-            logger.error("summarize_failed", title=title, error=str(e))
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            logger.error("summarize_failed", title=title, error=str(e), exc_info=True)
             raise
+        except Exception as e:
+            logger.exception("summarize_failed_unexpected", title=title)
+            raise LLMError(f"摘要生成失败: {e}") from e
 
     async def analyze_async(
         self,
@@ -175,9 +183,12 @@ class Summarizer:
             result = self._parse_response(response.content)
             logger.info("summarize_async_complete", title=title, summary_length=len(result.summary))
             return result
-        except Exception as e:
-            logger.error("summarize_async_failed", title=title, error=str(e))
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            logger.error("summarize_async_failed", title=title, error=str(e), exc_info=True)
             raise
+        except Exception as e:
+            logger.exception("summarize_async_failed_unexpected", title=title)
+            raise LLMError(f"摘要生成失败: {e}") from e
 
     def _parse_response(self, content: str) -> VideoAnalysis:
         """解析LLM响应"""

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from packages.logging import get_logger
+from alice.errors import AliceError, LLMError, LLMConnectionError, NetworkError
 
 from .llm import LLMManager, Message
 
@@ -59,8 +60,8 @@ def _get_tagger_prompt() -> str:
         prompt = cp.get_prompt_sync("tagger")
         if prompt:
             return prompt
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("tagger_prompt_fallback", error=str(e))
     
     return _FALLBACK_TAGGER_PROMPT
 
@@ -73,8 +74,8 @@ def _get_tagger_concepts_prompt() -> str:
         prompt = cp.get_prompt_sync("tagger_concepts")
         if prompt:
             return prompt
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("tagger_concepts_prompt_fallback", error=str(e))
     
     return "你是一个专业的概念提取助手。"
 
@@ -97,8 +98,12 @@ class Tagger:
                 from alice.control_plane import get_control_plane
                 cp = get_control_plane()
                 self.llm = cp.create_llm_for_task_sync("tagger")
-            except Exception:
+            except (LLMError, LLMConnectionError, NetworkError) as e:
+                logger.error("tagger_llm_init_failed", error=str(e), exc_info=True)
+                raise
+            except Exception as e:
                 # 回退到默认
+                logger.exception("tagger_llm_init_unexpected")
                 self.llm = LLMManager()
 
     def analyze(
@@ -127,9 +132,12 @@ class Tagger:
             result = self._parse_response(response.content)
             logger.info("tagging_complete", title=title, category=result.category)
             return result
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            logger.error("tagging_failed", title=title, error=str(e), exc_info=True)
+            raise
         except Exception as e:
-            logger.error("tagging_failed", title=title, error=str(e))
-            return TagResult(tags=[], category="其他", concepts=[], confidence=0.0)
+            logger.exception("tagging_failed_unexpected", title=title)
+            raise LLMError(f"标签生成失败: {e}") from e
 
     async def analyze_async(
         self,
@@ -157,9 +165,12 @@ class Tagger:
             result = self._parse_response(response.content)
             logger.info("tagging_async_complete", title=title, category=result.category)
             return result
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            logger.error("tagging_async_failed", title=title, error=str(e), exc_info=True)
+            raise
         except Exception as e:
-            logger.error("tagging_async_failed", title=title, error=str(e))
-            return TagResult(tags=[], category="其他", concepts=[], confidence=0.0)
+            logger.exception("tagging_async_failed_unexpected", title=title)
+            raise LLMError(f"标签生成失败: {e}") from e
 
     def _parse_response(self, content: str) -> TagResult:
         """解析LLM响应"""

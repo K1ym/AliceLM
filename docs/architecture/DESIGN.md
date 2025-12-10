@@ -293,10 +293,27 @@ AliceLM/
 │   └── db.sqlite
 │
 ├── docs/
-│   ├── DESIGN.md
-│   ├── ROADMAP.md
-│   ├── 1204PLAN.md
-│   └── ...
+│   ├── README.md                 # 文档索引
+│   ├── strategy/                 # 路线图与审计
+│   │   ├── ROADMAP.md
+│   │   └── ai_project_audit/
+│   ├── architecture/             # 架构/标准
+│   │   ├── DESIGN.md
+│   │   ├── BACKEND_ARCHITECTURE.md
+│   │   ├── FRONTEND_ARCHITECTURE.md
+│   │   └── DESIGN_SYSTEM.md
+│   ├── product/                  # PRD
+│   │   ├── PRD.md
+│   │   └── PRD_FRONTEND.md
+│   ├── operations/               # 部署/流程
+│   │   ├── DEPLOYMENT.md
+│   │   └── PR_WORKFLOW.md
+│   ├── api/                      # API 规格
+│   ├── research/                 # 调研/专项
+│   │   ├── AGENT_RESEARCH.md
+│   │   └── MULTI_SOURCE_REFACTOR.md
+│   └── archive/                  # 历史
+│       └── ALICE_VISION_ANALYSIS.md
 │
 ├── docker-compose.yml
 ├── pyproject.toml
@@ -599,11 +616,11 @@ Alice One + Agent 层对错误的处理策略：
 - 新增一个入口（比如 VSCode 插件）时，只要能按约定构造 `AgentTask`，就可以立刻复用 Alice One + Agent 全链路。
 - 前端只需要实现统一的结果渲染（answer + citations + steps?），而不需要为每个入口定制问答/检索逻辑。
 
-#### 2.3.8 与 1204PLAN / AGENT_RESEARCH 的对应关系
+#### 2.3.8 与 ROADMAP / AGENT_RESEARCH 的对应关系
 
-本设计与愿景/研究文档中的规划一一对应：
+本设计与愿景/研究文档中的规划一一对应（`1204PLAN.md` 已归档删除，当前路线图见 `docs/strategy/ROADMAP.md`，调研见 `docs/research/AGENT_RESEARCH.md`）：
 
-- **1204PLAN / Alice One 能力层**：
+- **ROADMAP / Alice One 能力层**：
   - AliceIdentityService ≈ 「Alice 身份 / 人格」服务
   - TimelineService ≈ 「统一时间线」与事件记录
   - ContextAssembler ≈ 「上下文拼装器」，负责从知识、时间线、对话中抽取合适的信息给 Alice One 使用
@@ -2326,6 +2343,7 @@ services:
      - `third_party/openmanus/`（完整 clone）
      - `third_party/mindsearch/`
      - `third_party/gemini_cli/`
+     - `third_party/strands_agents_tools/`
    - 这些目录只作为「源码参考 / 临时依赖」，**不允许**从业务代码直接 import；
      只能由 AI 助手在迁移时读取和 copy 代码片段。
 
@@ -2335,6 +2353,12 @@ services:
      - 拷贝后第一步：改成 Alice 命名；
      - 第二步：去掉 CLI / UI / demo 特有逻辑；
      - 第三步：把配置 / Provider 接入 Alice 的 Provider 抽象层。
+   - 适配要求（所有拷贝/改写均需满足）：
+     - 数据命名：使用 `source_type`+`source_id`，禁止再引入 `bvid`；租户/用户参数必须注入（tenant_id/user_id）。
+     - 错误与日志：使用 `alice.errors` 定义的错误类型；禁止日志输出敏感信息（key/token）。
+     - 配置与模型：统一走 ControlPlane / `config/base/`，禁止直接实例化 LLM/Provider。
+     - 工具接口：对齐 `AliceTool`/`ToolRouter` 规范，补充安全级别/审计字段。
+   - 已迁移的示例：`alice/agent/tools/ext/` 已参考 strands-agents/tools 的工具集实现，继续迁移时保持同样的适配规则。
 
 ---
 

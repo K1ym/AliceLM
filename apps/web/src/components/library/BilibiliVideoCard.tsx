@@ -11,7 +11,7 @@ function formatDuration(seconds: number): string {
 
 interface BilibiliVideoCardProps {
   video: BilibiliVideoInfo
-  onImport: (bvid: string) => void
+  onImport: (sourceId: string) => void
   importing: boolean
 }
 
@@ -61,15 +61,15 @@ export function BilibiliVideoCard({ video, onImport, importing }: BilibiliVideoC
           )}
           <div className="mt-auto pt-3 flex items-center gap-2">
             <a
-              href={`https://www.bilibili.com/video/${video.bvid}`}
+              href={`https://www.bilibili.com/video/${video.source_id || video.bvid}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-neutral-500 hover:text-neutral-900"
             >
-              {video.bvid}
+              {video.source_id || video.bvid}
             </a>
             <button
-              onClick={() => onImport(video.bvid)}
+              onClick={() => onImport(video.source_id || video.bvid || "")}
               disabled={importing}
               className="ml-auto px-3 py-1.5 bg-pink-500 text-white rounded-lg text-sm font-medium hover:bg-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
