@@ -90,23 +90,24 @@ class AliceAgentCore:
     async def run_task(self, task: AgentTask) -> AgentResult:
         """
         执行 Agent 任务
-        
+
         流程：
         1. StrategySelector 根据 scene 选择 Strategy
         2. 从 AliceIdentityService 获取 persona + tool_scopes
         3. ContextAssembler 组装上下文
         4. 调用 LLM 生成回答（暂不启用工具）
         5. 返回 AgentResult
-        
+
         Args:
             task: AgentTask 输入
-            
+
         Returns:
             AgentResult 包含 answer, citations, steps 等
         """
         steps: List[AgentStep] = []
         citations: List[AgentCitation] = []
-        
+        start_time = datetime.now()
+
         try:
             # Step 1: 选择策略
             strategy = self.strategy_selector.select(task)
@@ -114,6 +115,7 @@ class AliceAgentCore:
             steps.append(AgentStep(
                 step_idx=0,
                 thought=f"根据场景 {task.scene.value} 选择 {strategy.name} 策略",
+                kind="thought",
             ))
             
             # Step 2: 获取 Alice 身份
@@ -166,6 +168,7 @@ class AliceAgentCore:
             steps.append(AgentStep(
                 step_idx=1,
                 thought=f"构建上下文，包含 {len(messages)} 条消息，{len(tool_schemas)} 个工具",
+                kind="thought",
             ))
             
             # Step 6: 调用 LLM（附带工具 schema）
@@ -186,6 +189,7 @@ class AliceAgentCore:
                         thought=f"调用工具 {tool_name}",
                         tool_name=tool_name,
                         tool_args=tool_args,
+                        kind="tool",
                     ))
 
                     # 执行工具
@@ -205,70 +209,91 @@ class AliceAgentCore:
                     answer = f"{answer}\n\n工具调用结果：\n{tool_results_text}"
             
             steps.append(AgentStep(
-                step_idx=2,
+                step_idx=len(steps),
                 thought="调用 LLM 生成回答",
                 observation=answer[:200] + "..." if len(answer) > 200 else answer,
+                kind="thought",
             ))
-            
+
             logger.info(f"Agent completed, answer length: {len(answer)}")
+
+            # 计算总耗时
+            total_duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
             return AgentResult(
                 answer=answer,
                 citations=citations,
                 steps=steps,
+                total_duration_ms=total_duration_ms,
             )
 
         except (LLMError, LLMConnectionError) as e:
             logger.error(f"Agent LLM error: {e}", exc_info=True)
+            total_duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             steps.append(AgentStep(
                 step_idx=len(steps),
                 thought="LLM 调用失败",
                 error=str(e),
+                kind="thought",
             ))
             return AgentResult(
                 answer=f"抱歉，AI 服务暂时不可用：{str(e)}",
                 citations=[],
                 steps=steps,
+                error_code="LLM_ERROR",
+                total_duration_ms=total_duration_ms,
             )
 
         except NetworkError as e:
             logger.error(f"Agent network error: {e}", exc_info=True)
+            total_duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             steps.append(AgentStep(
                 step_idx=len(steps),
                 thought="网络请求失败",
                 error=str(e),
+                kind="thought",
             ))
             return AgentResult(
                 answer=f"抱歉，网络请求失败：{str(e)}",
                 citations=[],
                 steps=steps,
+                error_code="NETWORK_ERROR",
+                total_duration_ms=total_duration_ms,
             )
 
         except AgentError as e:
             logger.error(f"Agent execution error: {e}", exc_info=True)
+            total_duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             steps.append(AgentStep(
                 step_idx=len(steps),
                 thought="Agent 执行出错",
                 error=str(e),
+                kind="thought",
             ))
             return AgentResult(
                 answer=f"抱歉，处理请求时出现问题：{str(e)}",
                 citations=[],
                 steps=steps,
+                error_code="AGENT_ERROR",
+                total_duration_ms=total_duration_ms,
             )
 
         except Exception as e:
             # 兜底：记录完整堆栈，便于排查
             logger.exception(f"Agent unexpected error: {e}")
+            total_duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
             steps.append(AgentStep(
                 step_idx=len(steps),
                 thought="执行出错（未知异常）",
                 error=f"{type(e).__name__}: {str(e)}",
+                kind="thought",
             ))
             return AgentResult(
                 answer=f"抱歉，处理您的请求时出现了问题：{str(e)}",
                 citations=[],
                 steps=steps,
+                error_code="UNKNOWN_ERROR",
+                total_duration_ms=total_duration_ms,
             )
     
     def _build_messages(
