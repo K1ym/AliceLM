@@ -409,10 +409,14 @@ class AgentRun(Base):
     answer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     citations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    plan_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 任务规划JSON
+    safety_level: Mapped[str] = mapped_column(String(20), default="normal")  # low/normal/high
     
     # Token 使用
     prompt_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 总执行耗时(毫秒)
+    error_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # 错误码: LLM_ERROR/TOOL_ERROR/NETWORK_ERROR/...
     
     # 时间
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -435,6 +439,10 @@ class AgentStep(Base):
     tool_args: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
     observation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), default="tool")  # tool/thought/confirm
+    requires_user_confirm: Mapped[bool] = mapped_column(Boolean, default=False)
+    tool_trace_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # ToolTrace 序列化 JSON
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 步骤执行耗时(毫秒)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     

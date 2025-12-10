@@ -137,11 +137,14 @@ class AgentStep:
     """Agent 执行的单个步骤（用于调试 / 回放）"""
     step_idx: int
     thought: str                          # LLM 的思考
+    kind: str = "tool"                    # tool / thought / confirm
     tool_name: Optional[str] = None
     tool_args: Optional[Dict] = None
     observation: Optional[str] = None
     error: Optional[str] = None
+    requires_user_confirm: bool = False
     tool_trace: Optional[ToolTrace] = None  # 工具执行追踪
+    duration_ms: Optional[int] = None       # 步骤执行耗时(毫秒)
 
 
 @dataclass
@@ -159,3 +162,7 @@ class AgentResult:
     steps: List[AgentStep] = field(default_factory=list)        # 执行步骤
     tool_traces: List[ToolTrace] = field(default_factory=list)  # 工具调用追踪
     token_usage: Optional[Dict[str, int]] = None
+    plan_json: Optional[str] = None
+    safety_level: str = "normal"
+    error_code: Optional[str] = None         # LLM_ERROR/TOOL_ERROR/NETWORK_ERROR/...
+    total_duration_ms: Optional[int] = None  # 总执行耗时(毫秒)

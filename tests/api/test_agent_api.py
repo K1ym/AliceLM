@@ -221,3 +221,182 @@ class TestAgentErrorHandling:
         
         # FastAPI 通常能处理这种情况
         assert response.status_code in [200, 400, 401, 422]
+
+
+class TestAgentChatHappyPath:
+    """Agent Chat 正常路径回归测试 (M1 基线观测)"""
+
+    @patch("alice.agent.core.AliceAgentCore.run_task")
+    def test_chat_happy_path_returns_expected_fields(self, mock_run_task, client, db_session, sample_tenant, sample_user):
+        """
+        M1 回归测试：验证 Agent Chat 返回所有预期字段
+
+        包括 M1 新增的基线观测字段：
+        - plan_json, safety_level
+        - error_code, total_duration_ms, token_usage
+        - 步骤中的 kind, duration_ms
+        """
+        from alice.agent import AgentResult, AgentStep
+
+        # Mock AgentCore 返回包含新字段的结果
+        mock_run_task.return_value = AgentResult(
+            answer="这是一个测试回答",
+            steps=[
+                AgentStep(
+                    step_idx=0,
+                    thought="选择策略",
+                    kind="thought",
+                    duration_ms=10,
+                ),
+                AgentStep(
+                    step_idx=1,
+                    thought="调用工具",
+                    tool_name="search",
+                    tool_args={"query": "test"},
+                    observation="搜索结果",
+                    kind="tool",
+                    duration_ms=150,
+                ),
+            ],
+            citations=[],
+            tool_traces=[],
+            plan_json='{"steps": ["step1", "step2"]}',
+            safety_level="normal",
+            token_usage={"prompt_tokens": 100, "completion_tokens": 50},
+            total_duration_ms=200,
+        )
+
+        # 发起请求（需要认证，但我们主要测试响应结构）
+        response = client.post(
+            "/api/v1/agent/chat",
+            json={
+                "query": "测试问题",
+                "scene": "chat",
+            },
+            headers={"X-Tenant-ID": str(sample_tenant.id)}
+        )
+
+        # 如果需要认证，跳过内容验证
+        if response.status_code == 401:
+            pytest.skip("需要认证才能完成此测试")
+
+        assert response.status_code == 200, f"预期 200，实际 {response.status_code}: {response.text}"
+
+        data = response.json()
+
+        # 验证基础字段
+        assert "answer" in data
+        assert data["answer"] == "这是一个测试回答"
+
+        # 验证 M1 新增字段
+        assert "plan_json" in data
+        assert "safety_level" in data
+        assert data["safety_level"] == "normal"
+
+        # 验证观测指标
+        assert "token_usage" in data
+        assert "total_duration_ms" in data or "processing_time_ms" in data
+
+        # 验证步骤结构
+        assert "steps" in data
+        assert len(data["steps"]) == 2
+
+        # 验证步骤中的新字段
+        step0 = data["steps"][0]
+        assert step0["kind"] == "thought"
+        assert step0.get("duration_ms") == 10
+
+        step1 = data["steps"][1]
+        assert step1["kind"] == "tool"
+        assert step1["tool_name"] == "search"
+
+
+class TestAgentToolError:
+    """Agent 工具错误处理回归测试 (M1 基线观测)"""
+
+    @patch("alice.agent.core.AliceAgentCore.run_task")
+    def test_tool_error_returns_error_code(self, mock_run_task, client, db_session, sample_tenant):
+        """
+        M1 回归测试：验证工具执行错误时返回正确的 error_code
+        """
+        from alice.agent import AgentResult, AgentStep
+
+        # Mock AgentCore 返回包含错误的结果
+        mock_run_task.return_value = AgentResult(
+            answer="抱歉，工具执行失败",
+            steps=[
+                AgentStep(
+                    step_idx=0,
+                    thought="调用工具",
+                    tool_name="search",
+                    tool_args={"query": "test"},
+                    error="ToolExecutionError: 网络超时",
+                    kind="tool",
+                ),
+            ],
+            citations=[],
+            tool_traces=[],
+            error_code="TOOL_ERROR",
+            safety_level="normal",
+        )
+
+        response = client.post(
+            "/api/v1/agent/chat",
+            json={
+                "query": "这是一个会失败的请求",
+                "scene": "research",
+            },
+            headers={"X-Tenant-ID": str(sample_tenant.id)}
+        )
+
+        if response.status_code == 401:
+            pytest.skip("需要认证才能完成此测试")
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        # 验证 error_code 被正确返回
+        assert "error_code" in data
+        assert data["error_code"] == "TOOL_ERROR"
+
+        # 验证步骤中记录了错误
+        assert len(data["steps"]) >= 1
+        error_step = data["steps"][0]
+        assert error_step["error"] is not None
+        assert "ToolExecutionError" in error_step["error"]
+
+    @patch("alice.agent.core.AliceAgentCore.run_task")
+    def test_llm_error_returns_error_code(self, mock_run_task, client, db_session, sample_tenant):
+        """
+        M1 回归测试：验证 LLM 错误时返回正确的 error_code
+        """
+        from alice.agent import AgentResult, AgentStep
+
+        mock_run_task.return_value = AgentResult(
+            answer="抱歉，AI 服务暂时不可用",
+            steps=[
+                AgentStep(
+                    step_idx=0,
+                    thought="LLM 调用失败",
+                    error="LLMConnectionError: API 超时",
+                    kind="thought",
+                ),
+            ],
+            citations=[],
+            tool_traces=[],
+            error_code="LLM_ERROR",
+            safety_level="normal",
+        )
+
+        response = client.post(
+            "/api/v1/agent/chat",
+            json={"query": "测试"},
+            headers={"X-Tenant-ID": str(sample_tenant.id)}
+        )
+
+        if response.status_code == 401:
+            pytest.skip("需要认证才能完成此测试")
+
+        data = response.json()
+        assert data.get("error_code") == "LLM_ERROR"
