@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from packages.logging import get_logger
+from alice.errors import AliceError, LLMError, LLMConnectionError, NetworkError
 from .llm import LLMManager, Message
 
 logger = get_logger(__name__)
@@ -39,8 +40,8 @@ def _get_compress_prompt() -> str:
         prompt = cp.get_prompt_sync(CONTEXT_COMPRESS_PROMPT_KEY)
         if prompt:
             return prompt
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("context_compress_prompt_fallback", error=str(e))
     
     return _FALLBACK_COMPRESS_PROMPT
 
@@ -157,17 +158,13 @@ class ContextCompressor:
                 original_chars=original_chars,
                 compressed_chars=len(compressed),
             )
-            
+
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            logger.error("context_compress_failed", error=str(e), exc_info=True)
+            raise
         except Exception as e:
-            logger.error("context_compress_failed", error=str(e))
-            # 失败时返回简单截断
-            fallback = conversation_text[:1000] + "..." if len(conversation_text) > 1000 else conversation_text
-            return CompressResult(
-                compressed=f"[压缩失败，原始摘要] {fallback}",
-                original_count=len(messages),
-                original_chars=original_chars,
-                compressed_chars=len(fallback),
-            )
+            logger.exception("context_compress_failed_unexpected")
+            raise LLMError(f"上下文压缩失败: {e}") from e
 
     def build_context(
         self,

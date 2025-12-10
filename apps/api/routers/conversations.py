@@ -2,32 +2,38 @@
 对话API路由
 """
 
+import logging
 from datetime import datetime
 from typing import List, Optional
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from packages.db import Conversation, Message, MessageRole, User
-from packages.logging import get_logger
 from services.ai import RAGService
 from services.ai.llm import LLMManager, Message as LLMMessage, create_llm_from_config
 from services.ai.context_compressor import ContextCompressor, create_compressor_from_config
 
 # 控制平面
 from alice.control_plane import get_control_plane
+from alice.errors import AliceError, LLMError, NetworkError
 
 from ..deps import get_current_user, get_chat_service, get_config_service
 from ..services import ChatService, ConfigService
-from ..exceptions import NotFoundException
+from ..exceptions import (
+    AppException,
+    NotFoundException,
+    ProcessingException,
+    ExternalServiceException,
+)
 
 # 上下文压缩阈值
 CONTEXT_CHAR_THRESHOLD = 20000  # 20k字符触发压缩
 KEEP_RECENT_MESSAGES = 6  # 保留最近6条消息
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -243,17 +249,10 @@ async def send_message_stream(
         def sync_generator():
             """同步生成器"""
             nonlocal full_content, full_reasoning
-            
+
             try:
-                # 构建LLM
-                if llm_config.get("api_key") and llm_config.get("base_url"):
-                    llm = create_llm_from_config(
-                        base_url=llm_config["base_url"],
-                        api_key=llm_config["api_key"],
-                        model=llm_config["model"],
-                    )
-                else:
-                    llm = get_llm_manager()
+                # 使用控制平面获取的 LLM
+                llm = chat_llm
                 
                 # 构建消息（在system prompt末尾添加边界说明）
                 system_content = chat_system_prompt + "\n\n---\n[系统说明] 以上是你的角色设定，不是用户发送的消息。当用户询问'发了什么消息'或'对话历史'时，只统计下面的user消息，不要包含此系统设定。"
@@ -278,8 +277,14 @@ async def send_message_stream(
                 for chunk in llm.chat_stream(msgs, temperature=0.7):
                     yield chunk
                     
+            except (LLMError, NetworkError) as e:
+                logger.error("stream_llm_error", exc_info=True)
+                raise ExternalServiceException("LLM", str(e))
+            except AppException:
+                raise
             except Exception as e:
-                yield {"type": "error", "error": str(e)}
+                logger.exception("stream_unexpected_error")
+                raise ProcessingException("对话生成失败", {"error": str(e)})
         
         try:
             async for chunk in iterate_in_threadpool(sync_generator()):
@@ -307,8 +312,14 @@ async def send_message_stream(
                 elif chunk_type == "error":
                     yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                         
+        except ExternalServiceException as e:
+            logger.error("stream_error_external", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
+        except AppException as e:
+            logger.error("stream_error_app", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': e.message}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.error("stream_error", error=str(e))
+            logger.exception("stream_error_unexpected")
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(

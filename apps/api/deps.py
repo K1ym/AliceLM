@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from packages.config import get_config
 from packages.db import get_db_context, Tenant, User
+from packages.db.models import UserRole
 
 from .repositories import (
     VideoRepository,
@@ -39,26 +40,18 @@ async def get_current_user(
 ) -> User:
     """
     获取当前认证用户
-    
-    支持两种模式:
-    1. JWT Token认证
-    2. 开发模式下允许无认证访问默认用户
+
+    必须提供有效的 JWT Token 进行认证。
     """
-    # 开发模式允许无token访问
-    if config.debug and credentials is None:
-        user = db.query(User).filter(User.email == "admin@local").first()
-        if user:
-            return user
-    
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="未提供认证信息",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     token = credentials.credentials
-    
+
     try:
         payload = jwt.decode(
             token,
@@ -77,14 +70,21 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token解析失败",
         )
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在",
         )
-    
+
+    # 检查用户是否激活
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用",
+        )
+
     return user
 
 
@@ -100,6 +100,37 @@ async def get_current_tenant(
             detail="租户不存在",
         )
     return tenant
+
+
+# ========== RBAC 依赖注入 ==========
+
+def require_role(*allowed_roles: UserRole):
+    """
+    角色检查依赖工厂
+
+    用法:
+        @router.get("/admin-only")
+        async def admin_endpoint(user: User = Depends(require_role(UserRole.ADMIN, UserRole.OWNER))):
+            ...
+    """
+    async def role_checker(user: User = Depends(get_current_user)) -> User:
+        if user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"权限不足，需要角色: {[r.value for r in allowed_roles]}",
+            )
+        return user
+    return role_checker
+
+
+async def get_admin_user(user: User = Depends(get_current_user)) -> User:
+    """获取管理员用户（OWNER 或 ADMIN）"""
+    if user.role not in (UserRole.OWNER, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return user
 
 
 # ========== Repository 依赖注入 ==========

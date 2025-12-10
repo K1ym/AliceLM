@@ -19,6 +19,12 @@ from .types import (
     AgentRunState, ToolResult, ToolTrace,
 )
 
+# 统一错误类型
+from alice.errors import (
+    AliceError, AgentError, ToolExecutionError, LLMError,
+    LLMConnectionError, NetworkError
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +128,7 @@ class ToolExecutor:
                 if self.state == AgentRunState.FINISHED:
                     break
                 
-                logger.info(f"🔄 Executing step {step_idx + 1}/{self.max_steps}")
+                logger.info(f"Executing step {step_idx + 1}/{self.max_steps}")
                 
                 # Step = Think + Act
                 step, should_continue = await self._step(
@@ -144,7 +150,7 @@ class ToolExecutor:
                     if answer.startswith('"') and answer.endswith('"'):
                         answer = answer[1:-1]
                     self.state = AgentRunState.FINISHED
-                    logger.info(f"🏁 Got final answer at step {step_idx + 1}")
+                    logger.info(f"Got final answer at step {step_idx + 1}")
                     return AgentResult(
                         answer=answer,
                         citations=citations,
@@ -157,7 +163,7 @@ class ToolExecutor:
             
             # 达到最大步数，强制生成答案
             if self.state != AgentRunState.FINISHED:
-                logger.warning(f"⚠️ Reached max steps ({self.max_steps}), forcing final answer")
+                logger.warning(f"Reached max steps ({self.max_steps}), forcing final answer")
                 
                 final_answer = await self._generate_final_answer(
                     task.query,
@@ -185,13 +191,33 @@ class ToolExecutor:
                 steps=steps,
                 tool_traces=self.tool_traces,
             )
-            
-        except Exception as e:
+
+        except (AgentError, ToolExecutionError) as e:
             self.state = AgentRunState.ERROR
-            logger.error(f"🚨 Execution error: {e}")
+            logger.error("Execution error (agent)", exc_info=True)
             return AgentResult(
                 answer=f"执行出错: {str(e)}",
-                citations=[],
+                citations=citations,
+                steps=steps,
+                tool_traces=self.tool_traces,
+            )
+
+        except (LLMError, LLMConnectionError, NetworkError) as e:
+            self.state = AgentRunState.ERROR
+            logger.error("Execution error (llm)", exc_info=True)
+            return AgentResult(
+                answer=f"LLM 调用失败: {str(e)}",
+                citations=citations,
+                steps=steps,
+                tool_traces=self.tool_traces,
+            )
+
+        except Exception as e:
+            self.state = AgentRunState.ERROR
+            logger.exception("Execution error (unexpected)")
+            return AgentResult(
+                answer=f"执行出错: {type(e).__name__}: {str(e)}",
+                citations=citations,
                 steps=steps,
                 tool_traces=self.tool_traces,
             )
@@ -321,17 +347,21 @@ class ToolExecutor:
                 else f"Tool `{name}` completed with no output"
             )
             return observation
-            
+
+        except ToolExecutionError:
+            # 已经是 ToolExecutionError，直接向上抛出
+            raise
+
         except Exception as e:
             finished_at = datetime.now()
-            error_msg = str(e)
-            
+            error_msg = f"{type(e).__name__}: {str(e)}"
+
             # 构建失败的 ToolResult
             tool_result = ToolResult(
                 success=False,
                 error=error_msg,
             )
-            
+
             # 记录 ToolTrace
             trace = ToolTrace(
                 tool_name=name,
@@ -341,9 +371,9 @@ class ToolExecutor:
                 finished_at=finished_at,
             )
             self.tool_traces.append(trace)
-            
-            logger.error(f"Tool '{name}' error: {error_msg}")
-            return f"⚠️ Tool '{name}' error: {error_msg}"
+
+            logger.exception(f"Tool '{name}' error: {error_msg}")
+            raise ToolExecutionError(name, str(e), e) from e
     
     def _build_messages(
         self,
@@ -447,14 +477,22 @@ class ToolExecutor:
         """调用 LLM（使用控制平面）"""
         try:
             from alice.control_plane import get_control_plane
-            
+
             cp = get_control_plane()
             llm = cp.create_llm_for_task_sync("chat")
             return llm.chat(messages)
-            
+
+        except (LLMError, LLMConnectionError):
+            logger.exception("LLM call failed")
+            raise
+
+        except (ConnectionError, TimeoutError) as e:
+            logger.exception("LLM network failure")
+            raise LLMConnectionError(f"LLM 网络调用失败: {e}") from e
+
         except Exception as e:
-            logger.error(f"🚨 LLM call failed: {e}")
-            return f'{{"thought": "LLM 调用失败", "final_answer": "抱歉，AI 服务暂时不可用。"}}'
+            logger.exception("LLM call failed (unexpected)")
+            raise LLMError(f"LLM 调用失败: {type(e).__name__}: {e}") from e
     
     async def _direct_llm_response(
         self, 

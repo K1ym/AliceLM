@@ -13,6 +13,7 @@ from typing import List, Optional
 
 from packages.config import get_config
 from packages.logging import get_logger
+from alice.errors import AliceError, LLMError, LLMConnectionError, NetworkError
 
 from .base import LLMProvider, LLMResponse, Message
 
@@ -160,6 +161,9 @@ class OpenAIProvider(LLMProvider):
 
                 return result
 
+            except (LLMError, LLMConnectionError, NetworkError):
+                logger.exception("llm_error", provider=self.name, attempt=attempt)
+                raise
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
@@ -170,7 +174,7 @@ class OpenAIProvider(LLMProvider):
                 ])
                 
                 if not is_retryable or attempt >= max_attempts:
-                    logger.error("llm_error", provider=self.name, error=str(e), attempt=attempt)
+                    logger.error("llm_error", provider=self.name, error=str(e), attempt=attempt, exc_info=True)
                     if "rate limit" in error_str or "429" in error_str:
                         raise RateLimitError(str(e))
                     elif any(kw in error_str for kw in ["timeout", "connection"]):
@@ -180,7 +184,7 @@ class OpenAIProvider(LLMProvider):
                 
                 # 重试
                 wait = min(2 ** (attempt - 1), 30)
-                logger.warning(f"Retrying LLM call, attempt {attempt}, wait {wait}s", extra={"error": str(e)})
+                logger.warning(f"Retrying LLM call, attempt {attempt}, wait {wait}s", extra={"error": str(e)}, exc_info=True)
                 time.sleep(wait)
         
         raise LLMConnectionError(f"Failed after {max_attempts} attempts: {last_error}")
@@ -251,6 +255,9 @@ class OpenAIProvider(LLMProvider):
 
                 return result
 
+            except (LLMError, LLMConnectionError, NetworkError):
+                logger.exception("llm_async_error", provider=self.name, attempt=attempt)
+                raise
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
@@ -260,7 +267,7 @@ class OpenAIProvider(LLMProvider):
                 ])
                 
                 if not is_retryable or attempt >= max_attempts:
-                    logger.error("llm_async_error", provider=self.name, error=str(e), attempt=attempt)
+                    logger.error("llm_async_error", provider=self.name, error=str(e), attempt=attempt, exc_info=True)
                     if "rate limit" in error_str or "429" in error_str:
                         raise RateLimitError(str(e))
                     elif any(kw in error_str for kw in ["timeout", "connection"]):
@@ -269,7 +276,7 @@ class OpenAIProvider(LLMProvider):
                         raise LLMResponseError(str(e)) from e
                 
                 wait = min(2 ** (attempt - 1), 30)
-                logger.warning(f"Retrying async LLM call, attempt {attempt}, wait {wait}s")
+                logger.warning(f"Retrying async LLM call, attempt {attempt}, wait {wait}s", extra={"error": str(e)}, exc_info=True)
                 await asyncio.sleep(wait)
         
         raise LLMConnectionError(f"Failed after {max_attempts} attempts: {last_error}")
@@ -357,12 +364,12 @@ class OpenAIProvider(LLMProvider):
                 reasoning_length=len(full_reasoning),
             )
 
+        except (LLMError, LLMConnectionError, NetworkError):
+            logger.exception("llm_stream_error", provider=self.name)
+            raise
         except Exception as e:
-            logger.error("llm_stream_error", provider=self.name, error=str(e))
-            yield {
-                "type": "error",
-                "error": str(e),
-            }
+            logger.exception("llm_stream_error_unexpected", provider=self.name)
+            raise LLMError(str(e)) from e
 
     def is_available(self) -> bool:
         """检查是否可用"""
@@ -383,9 +390,12 @@ class OpenAIProvider(LLMProvider):
             model_ids = sorted([m.id for m in models.data])
             logger.info("models_fetched", count=len(model_ids), base_url=self.base_url)
             return model_ids
+        except (LLMError, LLMConnectionError, NetworkError):
+            logger.exception("models_fetch_failed", base_url=self.base_url)
+            raise
         except Exception as e:
-            logger.error("models_fetch_failed", error=str(e))
-            return []
+            logger.exception("models_fetch_failed_unexpected", base_url=self.base_url)
+            raise LLMError(str(e)) from e
 
     def save_models(self, path: str = "data/models.json") -> str:
         """

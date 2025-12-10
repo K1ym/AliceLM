@@ -157,9 +157,9 @@ def job_cleanup_audio(retention_days: int = 1):
                     file_size = audio_path.stat().st_size
                     audio_path.unlink()
                     freed_bytes += file_size
-                    logger.info("audio_deleted", bvid=video.source_id, path=str(audio_path))
+                    logger.info("audio_deleted", source_id=video.source_id, path=str(audio_path))
                 except Exception as e:
-                    logger.warning("audio_delete_failed", bvid=video.source_id, error=str(e))
+                    logger.warning("audio_delete_failed", source_id=video.source_id, error=str(e))
                     continue
             
             # 清理下载目录中的源文件
@@ -171,9 +171,9 @@ def job_cleanup_audio(retention_days: int = 1):
                         dir_size = sum(f.stat().st_size for f in target_dir.rglob("*") if f.is_file())
                         shutil.rmtree(target_dir)
                         freed_bytes += dir_size
-                        logger.info("dir_deleted", bvid=video.source_id, path=base_dir)
+                        logger.info("dir_deleted", source_id=video.source_id, path=base_dir)
                     except Exception as e:
-                        logger.warning("dir_delete_failed", bvid=video.source_id, path=base_dir, error=str(e))
+                        logger.warning("dir_delete_failed", source_id=video.source_id, path=base_dir, error=str(e))
             
             # 更新数据库
             video.audio_path = None

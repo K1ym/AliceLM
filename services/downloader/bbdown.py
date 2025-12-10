@@ -103,7 +103,7 @@ class BBDownService:
 
     async def download_video(
         self,
-        bvid: str,
+        source_id: str,
         mode: DownloadMode = DownloadMode.AUDIO,
         with_subtitle: bool = True,
         quality: Optional[str] = None,
@@ -112,7 +112,7 @@ class BBDownService:
         下载视频/音频
         
         Args:
-            bvid: BV号
+            source_id: BV号
             mode: 下载模式
             with_subtitle: 是否下载AI字幕
             quality: 画质优先级（如 "1080P 高码率"）
@@ -124,9 +124,9 @@ class BBDownService:
         start_time = time.time()
         
         if self.serve_url:
-            result = await self._download_via_api(bvid, mode, with_subtitle, quality)
+            result = await self._download_via_api(source_id, mode, with_subtitle, quality)
         else:
-            result = await self._download_via_cli(bvid, mode, with_subtitle, quality)
+            result = await self._download_via_cli(source_id, mode, with_subtitle, quality)
         
         result.duration = time.time() - start_time
         return result

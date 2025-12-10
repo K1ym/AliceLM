@@ -1,5 +1,7 @@
 # 📺 AliceLM 产品规划文档
 
+> 状态：2024-12 版本，未同步 2025 路线图。最新里程碑请参考 `docs/strategy/ROADMAP.md` 与 `docs/strategy/ai_project_audit/08_upgrade_roadmap.md`。
+
 > **愿景**：让每一个收藏的视频，都变成可检索、可理解、可回顾的知识资产
 
 ---

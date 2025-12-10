@@ -2,7 +2,9 @@
 
 export interface Video {
   id: number;
-  bvid: string;
+  source_type: string;
+  source_id: string;
+  bvid?: string; // backward compat
   title: string;
   author: string;
   duration: number;

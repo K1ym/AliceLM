@@ -30,10 +30,11 @@ HEADERS = {
 @dataclass
 class VideoInfo:
     """视频信息"""
-    bvid: str
     title: str
     author: str
     duration: int
+    source_type: str = "bilibili"
+    source_id: str = ""
     cover_url: Optional[str] = None
     view_count: Optional[int] = None
     aid: Optional[int] = None
@@ -146,7 +147,8 @@ class BilibiliClient:
             medias = data.get("medias") or []
             for m in medias:
                 all_videos.append(VideoInfo(
-                    bvid=m["bvid"],
+                    source_type="bilibili",
+                    source_id=m["bvid"],
                     title=m["title"],
                     author=m["upper"]["name"],
                     duration=m["duration"],
@@ -282,7 +284,8 @@ class BilibiliClient:
 
             for v in archives:
                 all_videos.append(VideoInfo(
-                    bvid=v["bvid"],
+                    source_type="bilibili",
+                    source_id=v["bvid"],
                     title=v["title"],
                     author=season_owner,
                     duration=v["duration"],
@@ -349,15 +352,15 @@ class BilibiliClient:
 
     # ========== 便捷方法 ==========
 
-    def get_all_bvids_from_user(self, user_id: str) -> dict[str, List[str]]:
+    def get_all_source_ids_from_user(self, user_id: str) -> dict[str, List[str]]:
         """
-        获取用户所有收藏夹的BV号，按收藏夹分类
+        获取用户所有收藏夹的 source_id（B 站为 bvid），按收藏夹分类
         
         Args:
             user_id: 用户ID
             
         Returns:
-            {收藏夹名: [bvid列表]}
+            {收藏夹名: [source_id列表]}
         """
         folders = self.fetch_user_favlists(user_id)
         result = {}
@@ -366,6 +369,10 @@ class BilibiliClient:
             if folder.media_count == 0:
                 continue
             _, videos = self.fetch_favlist(folder.id)
-            result[folder.title] = [v.bvid for v in videos]
+            result[folder.title] = [v.source_id for v in videos]
 
         return result
+
+    # 保持向后兼容的别名
+    def get_all_bvids_from_user(self, user_id: str) -> dict[str, List[str]]:
+        return self.get_all_source_ids_from_user(user_id)

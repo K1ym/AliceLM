@@ -122,21 +122,21 @@ class SleepTool(AliceTool):
 class GetTimelineSummaryTool(AliceTool):
     """
     获取时间线摘要工具
-    
+
     调用 TimelineService 获取用户最近的活动摘要。
     """
-    
+
     def __init__(self, db=None):
         self._db = db
-    
+
     @property
     def name(self) -> str:
         return "get_timeline_summary"
-    
+
     @property
     def description(self) -> str:
         return "获取用户最近的学习活动摘要，包括观看的视频、提问记录等。"
-    
+
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
@@ -146,23 +146,30 @@ class GetTimelineSummaryTool(AliceTool):
                     "type": "integer",
                     "description": "统计天数，默认 7 天",
                     "default": 7
+                },
+                "tenant_id": {
+                    "type": "integer",
+                    "description": "租户 ID（由系统自动填充）"
                 }
             },
             "required": []
         }
-    
+
     async def run(self, args: Dict[str, Any]) -> str:
         days = args.get("days", 7)
-        
+        tenant_id = args.get("tenant_id")
+
         if self._db is None:
             return f"[模拟] 最近 {days} 天的时间线摘要：暂无数据"
-        
+
+        if tenant_id is None:
+            return f"[错误] 未提供 tenant_id，无法获取时间线摘要"
+
         try:
             from alice.one import TimelineService
             service = TimelineService(self._db)
-            # 注意：需要 tenant_id，这里简化处理
             summary = await service.get_recent_summary(
-                tenant_id=1,  # TODO: 从上下文获取
+                tenant_id=tenant_id,
                 days=days,
             )
             

@@ -14,6 +14,7 @@ import re
 import time
 from typing import List, Optional, Dict, Any
 
+from alice.errors import AliceError, AgentError, LLMError, NetworkError
 from .types import AgentTask, AgentPlan, PlanStepState
 
 logger = logging.getLogger(__name__)
@@ -92,14 +93,14 @@ class TaskPlanner:
             plan = AgentPlan(steps=steps, current_step=0)
             self._store_plan(plan_id, title, steps)
             return plan
-            
+
+        except (LLMError, NetworkError) as e:
+            logger.error("Planning failed (llm/network)", exc_info=True)
+            raise AgentError(f"计划生成失败: {e}") from e
+
         except Exception as e:
-            logger.warning(f"Planning failed: {e}, falling back to default plan")
-            # 创建默认计划
-            default_steps = ["分析请求", "执行任务", "验证结果"]
-            plan = AgentPlan(steps=default_steps, current_step=0)
-            self._store_plan(plan_id, f"Plan for: {task.query[:50]}", default_steps)
-            return plan
+            logger.exception("Planning failed (unexpected)")
+            raise AgentError(f"计划生成失败: {type(e).__name__}: {e}") from e
     
     def _store_plan(self, plan_id: str, title: str, steps: List[str]) -> None:
         """存储计划"""

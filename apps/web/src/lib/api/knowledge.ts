@@ -31,7 +31,9 @@ export interface KnowledgeGraph {
 
 export interface ConceptVideo {
   id: number
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string  // 兼容字段
   title: string
   author: string
 }
@@ -65,7 +67,9 @@ export interface WeeklyReport {
 
 export interface ReviewSuggestion {
   video_id: number
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string  // 兼容字段
   title: string
   concepts: string[]
   last_viewed: string

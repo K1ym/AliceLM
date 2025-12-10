@@ -33,14 +33,18 @@ router = APIRouter()
 
 class VideoImportRequest(BaseModel):
     """视频导入请求"""
-    url: str = Field(..., description="B站视频URL或BV号")
+    url: Optional[str] = Field(None, description="视频URL（B站/其他源）")
+    source_type: str = Field(default="bilibili", description="内容源类型，如 bilibili")
+    source_id: Optional[str] = Field(None, description="内容源ID，如 bvid")
+    bvid: Optional[str] = Field(None, alias="bvid", description="向后兼容的BV号别名")
     auto_process: bool = Field(default=True, description="是否自动处理")
 
 
 class VideoImportResponse(BaseModel):
     """视频导入响应"""
     id: int
-    bvid: str
+    source_type: str
+    source_id: str
     title: str
     status: str
     message: str
@@ -53,15 +57,23 @@ async def import_video(
     service: VideoService = Depends(get_video_service),
 ):
     """导入B站视频"""
+    source_id = request.source_id or request.bvid
+    source_type = request.source_type or "bilibili"
+
+    if not source_id and not request.url:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "必须提供 source_id 或 url")
+
     try:
         video, is_new = await service.import_video(
+            source_type=source_type,
+            source_id=source_id,
             url=request.url,
-            tenant=tenant,
             auto_process=request.auto_process,
         )
         return VideoImportResponse(
             id=video.id,
-            bvid=video.source_id,
+            source_type=video.source_type,
+            source_id=video.source_id,
             title=video.title,
             status=video.status,
             message="已加入处理队列" if is_new else "视频已存在",
@@ -83,13 +95,18 @@ async def import_videos_batch(
     results = []
     for url in urls:
         try:
-            video, is_new = await service.import_video(url, tenant)
+            video, is_new = await service.import_video(
+                url=url,
+                tenant=tenant,
+                source_type="bilibili",
+            )
             results.append({
                 "url": url,
                 "success": True,
                 "data": VideoImportResponse(
                     id=video.id,
-                    bvid=video.source_id,
+                    source_type=video.source_type,
+                    source_id=video.source_id,
                     title=video.title,
                     status=video.status,
                     message="已加入处理队列" if is_new else "视频已存在",
@@ -142,7 +159,8 @@ async def list_videos(
     items = [
         VideoSummary(
             id=v.id,
-            bvid=v.source_id,
+            source_type=v.source_type,
+            source_id=v.source_id,
             title=v.title,
             author=v.author,
             duration=v.duration,
@@ -239,7 +257,8 @@ async def get_video(
     
     return VideoDetail(
         id=video.id,
-        bvid=video.source_id,
+        source_type=video.source_type,
+        source_id=video.source_id,
         title=video.title,
         author=video.author,
         duration=video.duration,
@@ -305,7 +324,8 @@ async def get_transcript(
         ]
     
     return VideoTranscript(
-        bvid=video.source_id,
+        source_type=video.source_type,
+        source_id=video.source_id,
         title=video.title,
         transcript=transcript,
         segments=segments,

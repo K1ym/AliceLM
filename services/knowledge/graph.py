@@ -31,7 +31,8 @@ class VideoNode:
     """视频节点"""
     id: int
     title: str
-    bvid: str
+    source_type: str
+    source_id: str
     concepts: List[str] = field(default_factory=list)
 
 
@@ -116,7 +117,8 @@ class KnowledgeGraphService:
             video_node = VideoNode(
                 id=video.id,
                 title=video.title,
-                bvid=video.source_id,
+                source_type=video.source_type,
+                source_id=video.source_id,
                 concepts=concepts,
             )
             video_nodes[video.id] = video_node

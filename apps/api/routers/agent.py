@@ -5,19 +5,23 @@ Stage S2: AliceAgentCore 统一入口
 所有 Agent 请求都通过此路由，统一构造 AgentTask 并调用 AliceAgentCore。
 """
 
+import logging
 from typing import Optional, List
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from packages.db import Tenant
+from packages.db import Tenant, User
 from alice.agent import AgentTask, AgentResult, Scene, AliceAgentCore
+from alice.errors import AliceError, LLMError, NetworkError
 
-from ..deps import get_current_tenant, get_db
+from ..deps import get_current_tenant, get_current_user, get_db
+from ..exceptions import AppException, ProcessingException, ExternalServiceException
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============== Request/Response Schemas ==============
@@ -66,6 +70,7 @@ class AgentChatResponse(BaseModel):
 @router.post("/chat", response_model=AgentChatResponse)
 async def agent_chat(
     request: AgentChatRequest,
+    user: User = Depends(get_current_user),
     tenant: Tenant = Depends(get_current_tenant),
     db: Session = Depends(get_db),
 ):
@@ -88,7 +93,7 @@ async def agent_chat(
         tenant_id=str(tenant.id),
         scene=scene,
         query=request.query,
-        user_id=None,  # TODO: 从认证中获取
+        user_id=str(user.id),
         video_id=request.video_id,
         selection=request.selection,
         extra_context=request.extra_context or {},
@@ -131,11 +136,14 @@ async def agent_chat(
             processing_time_ms=processing_time_ms,
         )
         
+    except (LLMError, NetworkError) as e:
+        logger.error("agent_chat_llm_error", exc_info=True)
+        raise ExternalServiceException("LLM", str(e))
+    except AppException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent 执行失败: {str(e)}",
-        )
+        logger.exception("agent_chat_unexpected")
+        raise ProcessingException(f"Agent 执行失败: {str(e)}")
 
 
 @router.get("/strategies")

@@ -1,0 +1,25 @@
+# 自动触发 Codex Review
+# PR 创建时自动评论 @codex review
+
+name: Auto Codex Review
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  trigger-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment to trigger Codex
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            @codex review
+            
+            ---
+            *Auto-triggered by GitHub Actions*

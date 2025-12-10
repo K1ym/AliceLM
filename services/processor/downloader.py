@@ -13,6 +13,7 @@ from typing import Optional
 
 from packages.config import get_config
 from packages.logging import get_logger
+from alice.errors import AliceError, NetworkError
 
 logger = get_logger(__name__)
 
@@ -107,11 +108,14 @@ class VideoDownloader:
             logger.info("download_complete", bvid=bvid, path=str(video_path))
             return video_path
 
-        except subprocess.TimeoutExpired:
-            logger.error("download_timeout", bvid=bvid)
-            raise Exception(f"下载超时: {bvid}")
+        except subprocess.TimeoutExpired as e:
+            logger.error("download_timeout", bvid=bvid, exc_info=True)
+            raise NetworkError(f"下载超时: {bvid}") from e
+        except (OSError, IOError) as e:
+            logger.error("download_error_io", bvid=bvid, error=str(e), exc_info=True)
+            raise
         except Exception as e:
-            logger.error("download_error", bvid=bvid, error=str(e))
+            logger.exception("download_error_unexpected", bvid=bvid)
             raise
 
     def get_video_path(self, bvid: str) -> Optional[Path]:
@@ -162,8 +166,10 @@ class VideoDownloader:
                         return result.file_path, ai_subtitle
                     
                     logger.warning("bbdown_failed_fallback", bvid=bvid, error=result.error)
+            except (NetworkError, OSError, IOError) as e:
+                logger.error("bbdown_error_fallback", bvid=bvid, error=str(e), exc_info=True)
             except Exception as e:
-                logger.warning("bbdown_error_fallback", bvid=bvid, error=str(e))
+                logger.exception("bbdown_error_fallback_unexpected", bvid=bvid)
         
         # 回退到yt-dlp
         video_path = self.download_bilibili(bvid, sessdata)

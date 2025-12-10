@@ -51,7 +51,7 @@ class BilibiliDownloader(ContentDownloader):
         output_dir: Optional[Path] = None,
     ) -> DownloadResult:
         """下载 B 站视频/音频"""
-        # 确保 bvid 格式正确
+        # 确保 BV 格式正确
         bvid = self._normalize_bvid(source_id)
 
         # 映射下载模式
@@ -74,7 +74,7 @@ class BilibiliDownloader(ContentDownloader):
             try:
                 subtitle_content = result.subtitle_path.read_text(encoding="utf-8")
             except Exception as e:
-                logger.warning("read_subtitle_failed", bvid=bvid, error=str(e))
+                logger.warning("read_subtitle_failed", source_id=bvid, error=str(e))
 
         return DownloadResult(
             success=result.success,

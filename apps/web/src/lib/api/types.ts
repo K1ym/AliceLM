@@ -25,7 +25,9 @@ export interface UserInfo {
 
 export interface Video {
   id: number
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string
   title: string
   author: string | null
   duration: number | null
@@ -71,7 +73,9 @@ export interface CommentsResponse {
 
 export interface QueueVideo {
   id: number
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string
   title: string
   status: string
   error_message: string | null
@@ -103,13 +107,18 @@ export interface TagStats {
 // ============== 导入 ==============
 
 export interface VideoImportRequest {
-  url: string
+  url?: string
+  source_type?: string
+  source_id?: string
+  bvid?: string
   auto_process?: boolean
 }
 
 export interface VideoImportResponse {
   id: number
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string
   title: string
   status: string
   message: string
@@ -306,7 +315,9 @@ export interface BilibiliFoldersResponse {
 }
 
 export interface BilibiliVideoInfo {
-  bvid: string
+  source_type: string
+  source_id: string
+  bvid?: string
   title: string
   author: string
   duration: number

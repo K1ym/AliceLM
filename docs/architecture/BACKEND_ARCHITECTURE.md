@@ -1,6 +1,12 @@
 # AliceLM 后端架构文档
 
-> 版本: 2.0 | 更新: 2024-12 | 分层架构完成
+> 版本: 2.1 | 更新: 2025-12-09 | 说明：分层架构仍有效，但 Agent 主循环未接线，RAG/Graph/Timeline 仍有 TODO，最新路线图见 `docs/strategy/ROADMAP.md`。
+
+## 当前状态速览（2025-02）
+- Agent：`AliceAgentCore` 已接入 `/api/agent/chat`，但 `TaskPlanner`/`ToolExecutor` 的 ReAct 循环未启用；Self-corrector/确认机制缺失。
+- 上下文：`ContextAssembler` 及 RAG/Graph/Timeline 接口部分是占位；工具调用缺安全等级与审计。
+- 数据/多租户：`source_type/source_id` 方案在进行中，仍有 `bvid`/tenant_id 硬编码待清理（见 `docs/strategy/ai_project_audit/08_upgrade_roadmap.md`）。
+- 观测与安全：AgentRun/Step 扩展、tool trace、超时/熔断未落地；认证旁路/RBAC/API Key 加密等 P0 安全债待修。
 
 ---
 

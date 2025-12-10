@@ -1,5 +1,7 @@
 # AliceLM Frontend PRD
 
+> 状态：2024-12 版本，未同步 2025 路线图。前端当前入口已走 `/api/agent/chat`，但 Agent 回放/确认/任务中心 UI 未实现；最新里程碑见 `docs/strategy/ROADMAP.md`。
+
 ## 1. Product Vision
 
 **One-liner**: 你的视频，变成可对话的知识。
@@ -1114,4 +1116,3 @@ function NavButton({ icon: Icon, active }: { icon: LucideIcon; active?: boolean 
 - Chat response latency < 2s (first token)
 - Zero processing failures on valid URLs
 - Mobile usability score > 90
-

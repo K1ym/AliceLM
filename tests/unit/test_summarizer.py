@@ -2,11 +2,13 @@
 services.ai.summarizer 单元测试
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from services.ai.llm import LLMManager, LLMResponse
 from services.ai.summarizer import Summarizer, VideoAnalysis
-from services.ai.llm import LLMManager, LLMResponse, Message
 
 
 class TestSummarizer:
@@ -74,16 +76,17 @@ class TestSummarizer:
         assert hasattr(summarizer, 'analyze_async')
         assert callable(summarizer.analyze_async)
     
-    @pytest.mark.asyncio
-    async def test_analyze_async(self, mock_llm):
-        """测试异步分析"""
+    def test_analyze_async(self, mock_llm):
+        """测试异步分析（同步执行 async 以避免插件依赖）"""
         summarizer = Summarizer(llm_manager=mock_llm)
-        
-        result = await summarizer.analyze_async(
-            transcript="视频内容",
-            title="测试",
+
+        result = asyncio.run(
+            summarizer.analyze_async(
+                transcript="视频内容",
+                title="测试",
+            )
         )
-        
+
         assert isinstance(result, VideoAnalysis)
         assert result.summary == "异步摘要"
 

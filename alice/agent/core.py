@@ -26,6 +26,12 @@ from .tool_router import ToolRouter
 # 控制平面导入
 from alice.control_plane import AliceControlPlane, get_control_plane
 
+# 统一错误类型
+from alice.errors import (
+    AliceError, AgentError, LLMError, LLMConnectionError,
+    ToolExecutionError, ConfigError, NetworkError
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,8 +76,10 @@ class AliceAgentCore:
             for tool in tools:
                 try:
                     self.tool_router.register_tool(tool)
+                except ConfigError as e:
+                    logger.warning(f"Tool registration failed (config): {e}")
                 except Exception as e:
-                    pass  # 忽略注册失败的工具
+                    logger.error(f"Tool registration failed unexpectedly: {tool}", exc_info=True)
         else:
             self.tool_router = None
         
@@ -168,14 +176,18 @@ class AliceAgentCore:
                 for tc in tool_calls:
                     tool_name = tc.get("name", "")
                     tool_args = tc.get("arguments", {})
-                    
+
+                    # 注入运行时上下文（tenant_id）到工具参数
+                    if task.tenant_id and "tenant_id" not in tool_args:
+                        tool_args["tenant_id"] = int(task.tenant_id)
+
                     steps.append(AgentStep(
                         step_idx=len(steps),
                         thought=f"调用工具 {tool_name}",
                         tool_name=tool_name,
                         tool_args=tool_args,
                     ))
-                    
+
                     # 执行工具
                     tool_result = await self.tool_router.execute_safe(tool_name, tool_args)
                     steps[-1].observation = str(tool_result.get("result", tool_result.get("error", "")))
@@ -199,19 +211,59 @@ class AliceAgentCore:
             ))
             
             logger.info(f"Agent completed, answer length: {len(answer)}")
-            
+
             return AgentResult(
                 answer=answer,
                 citations=citations,
                 steps=steps,
             )
-            
-        except Exception as e:
-            logger.error(f"Agent error: {e}", exc_info=True)
+
+        except (LLMError, LLMConnectionError) as e:
+            logger.error(f"Agent LLM error: {e}", exc_info=True)
             steps.append(AgentStep(
                 step_idx=len(steps),
-                thought="执行出错",
+                thought="LLM 调用失败",
                 error=str(e),
+            ))
+            return AgentResult(
+                answer=f"抱歉，AI 服务暂时不可用：{str(e)}",
+                citations=[],
+                steps=steps,
+            )
+
+        except NetworkError as e:
+            logger.error(f"Agent network error: {e}", exc_info=True)
+            steps.append(AgentStep(
+                step_idx=len(steps),
+                thought="网络请求失败",
+                error=str(e),
+            ))
+            return AgentResult(
+                answer=f"抱歉，网络请求失败：{str(e)}",
+                citations=[],
+                steps=steps,
+            )
+
+        except AgentError as e:
+            logger.error(f"Agent execution error: {e}", exc_info=True)
+            steps.append(AgentStep(
+                step_idx=len(steps),
+                thought="Agent 执行出错",
+                error=str(e),
+            ))
+            return AgentResult(
+                answer=f"抱歉，处理请求时出现问题：{str(e)}",
+                citations=[],
+                steps=steps,
+            )
+
+        except Exception as e:
+            # 兜底：记录完整堆栈，便于排查
+            logger.exception(f"Agent unexpected error: {e}")
+            steps.append(AgentStep(
+                step_idx=len(steps),
+                thought="执行出错（未知异常）",
+                error=f"{type(e).__name__}: {str(e)}",
             ))
             return AgentResult(
                 answer=f"抱歉，处理您的请求时出现了问题：{str(e)}",
@@ -308,11 +360,19 @@ class AliceAgentCore:
             else:
                 response = llm.chat(formatted_messages)
                 return response, []
-            
+
+        except (LLMError, LLMConnectionError) as e:
+            logger.error(f"LLM call failed: {e}", exc_info=True)
+            raise  # 向上抛出，让 run_task 处理
+
+        except (ConnectionError, TimeoutError) as e:
+            logger.error(f"LLM network error: {e}", exc_info=True)
+            raise LLMConnectionError(f"LLM 连接失败: {e}")
+
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
-            # 降级返回
-            return f"抱歉，AI 服务暂时不可用。您的问题是：{messages[-1].get('content', '')}", []
+            # 未知异常：记录完整堆栈，包装后抛出
+            logger.exception(f"LLM call unexpected error: {e}")
+            raise LLMError(f"LLM 调用失败: {type(e).__name__}: {e}")
 
 
 # 便捷函数

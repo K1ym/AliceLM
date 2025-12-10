@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from packages.db import Video, VideoStatus
 from packages.logging import get_logger
+from alice.errors import AliceError, NetworkError
 from services.asr import ASRManager, TranscriptResult, create_api_asr
 
 # 控制平面
@@ -137,8 +138,10 @@ class VideoPipeline:
                         logger.info("download_success", source_type=video.source_type, source_id=video.source_id)
                 finally:
                     loop.close()
+            except (NetworkError, OSError, IOError) as e:
+                logger.error("download_failed", source_id=video.source_id, error=str(e), exc_info=True)
             except Exception as e:
-                logger.warning("download_failed", source_id=video.source_id, error=str(e))
+                logger.exception("download_failed_unexpected", source_id=video.source_id)
 
             # 如果统一下载器失败，回退到旧逻辑（仅 bilibili）
             if audio_path is None and video.source_type == "bilibili":
@@ -158,8 +161,10 @@ class VideoPipeline:
                         logger.info("video_file_deleted", source_id=video.source_id, path=str(video_path))
                     video.video_path = None
                     db.commit()
-                except Exception as e:
-                    logger.warning("video_delete_failed", source_id=video.source_id, error=str(e))
+                except (OSError, IOError) as e:
+                    logger.error("video_delete_failed", source_id=video.source_id, error=str(e), exc_info=True)
+                except Exception:
+                    logger.exception("video_delete_failed_unexpected", source_id=video.source_id)
             
             video.audio_path = str(audio_path)
             db.commit()
@@ -221,9 +226,12 @@ class VideoPipeline:
                     source_id=video.source_id,
                     summary_length=len(analysis.summary),
                 )
+            except NetworkError as e:
+                # AI分析失败不阻塞流程
+                logger.error("analysis_skipped_network", source_id=video.source_id, error=str(e), exc_info=True)
             except Exception as e:
                 # AI分析失败不阻塞流程
-                logger.warning("analysis_skipped", source_id=video.source_id, error=str(e))
+                logger.exception("analysis_skipped_unexpected", source_id=video.source_id)
 
             # Step 5: 向量化（索引到知识库）
             video.status = VideoStatus.INDEXING.value
@@ -232,9 +240,12 @@ class VideoPipeline:
             try:
                 logger.info("pipeline_step", step="indexing", source_id=video.source_id)
                 self._index_to_rag(video, result.text, db, user_id)
+            except NetworkError as e:
+                # 向量化失败不阻塞流程
+                logger.error("indexing_skipped_network", source_id=video.source_id, error=str(e), exc_info=True)
             except Exception as e:
                 # 向量化失败不阻塞流程
-                logger.warning("indexing_skipped", source_id=video.source_id, error=str(e))
+                logger.exception("indexing_skipped_unexpected", source_id=video.source_id)
 
             # Step 6: 完成
             video.status = VideoStatus.DONE.value
@@ -265,7 +276,7 @@ class VideoPipeline:
             video.retry_count += 1
             db.commit()
             
-            logger.error("pipeline_failed", source_id=video.source_id, error=str(e))
+            logger.exception("pipeline_failed", source_id=video.source_id, error=str(e))
             
             # 发送失败通知
             if self.notifier and self.notifier.is_configured():
@@ -336,7 +347,7 @@ class VideoPipeline:
                 indent=2,
             )
 
-        logger.info("transcript_saved", bvid=bvid, path=str(txt_path))
+        logger.info("transcript_saved", source_id=source_id, path=str(txt_path))
         return txt_path
 
     def process_pending(self, db: Session, tenant_id: int, limit: int = 10) -> list:
@@ -367,7 +378,10 @@ class VideoPipeline:
                 self.process(video, db)
                 processed.append(video)
             except Exception as e:
-                logger.error("process_video_failed", source_id=video.source_id, error=str(e))
+                logger.exception("process_video_failed", source_id=video.source_id)
+                video.status = VideoStatus.FAILED.value
+                video.error_message = str(e)
+                db.commit()
                 continue
 
         return processed
