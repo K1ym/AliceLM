@@ -38,6 +38,40 @@
 
 ---
 
+## 全局技术债清单
+
+> 以下问题跨越多个模块，需要在各里程碑中逐步修复。
+
+### P1 严重问题
+
+| # | 类别 | 文件 | 问题 | 影响 | 归属 |
+|---|------|------|------|------|------|
+| T1 | 异步阻塞 | `video_service.py:37-85` | 新建 event loop + run_until_complete | 阻塞 FastAPI 事件循环，资源泄漏 | M1 |
+| T2 | Token 预算 | `context_compressor.py`, `summarizer.py`, `conversations.py` | 字符数冒充 token 数 | 上下文可能超限或截断过度 | M2.5 |
+| T3 | HTTP 客户端 | `video_service.py`, `watcher/*.py` | 未复用连接池，无重试策略 | 资源占用高，易挂死/被限流 | M1 |
+| T4 | 时间戳 | `core.py`, `tool_executor.py`, `pipeline.py` | 混用 `now()` 和 `utcnow()`，naive datetime | 时区混乱，耗时计算不准 | M1 |
+| T5 | 单例线程安全 | `qa.py`, `VideoProcessingQueue` | 全局单例无线程安全，生命周期不清 | 多线程下竞态或资源泄漏 | M1 |
+
+### P2 重要问题
+
+| # | 类别 | 文件 | 问题 | 影响 | 归属 |
+|---|------|------|------|------|------|
+| T6 | 魔数硬编码 | `context_compressor.py`, `summarizer.py`, `conversations.py` | 15000 字符、6 条消息、20k 等硬编码 | 随模型变更失效 | M2.5 |
+| T7 | 索引缺失 | 新增 memory/graph/timeline 表 | 缺少 (tenant_id, scene, source_id) 复合索引 | 检索性能隐患 | M2.5 |
+| T8 | 文件清理 | `pipeline.py`, `downloader.py` | 临时文件残留，异常分支不清理 | 磁盘增长 | M3 |
+| T9 | 错误处理 | 多处 broad except | 仅日志无分类错误码/重试策略 | 排障困难 | M1 |
+| T10 | API 不一致 | `knowledge.ts`, 部分 API | bvid 残留，与 source_type/source_id 规范不一致 | 前后端错位 | M1 |
+
+### P3 优化项
+
+| # | 类别 | 问题 | 归属 |
+|---|------|------|------|
+| T11 | 缓存缺失 | LLM/外部 API 调用无缓存，Prompt 无 cache | M4 |
+| T12 | 观测缺失 | Context/RAG/Memory 无 metrics/trace | M3 |
+| T13 | 分页缺失 | 部分列表接口无分页限制 | M3 |
+
+---
+
 ## 里程碑（Jarvis 目标导向）
 
 ### M1：地基与安全（1–2 周）
@@ -51,6 +85,13 @@
   - 服务/API：统一参数与返回结构为 `source_type + source_id`，B 站 bvid 留在 provider 层解析。
   - 前端：types/api/组件替换 bvid，保留过渡映射；同步接口 mock。
   - 测试/文档：更新 fixtures/用例，补多源场景测试；API 示例替换字段。
+- **技术债修复（T1/T3/T4/T5/T9/T10）**：
+  - T1: 修复 `video_service.py` 异步阻塞，改为纯 async 实现
+  - T3: 统一 HTTP 客户端，复用连接池，设定超时+重试策略
+  - T4: 统一时间戳为 UTC，使用 timezone-aware datetime
+  - T5: 重构全局单例，使用依赖注入/工厂模式
+  - T9: 分类异常 + 错误码 + 可重试策略
+  - T10: 清理 bvid 残留，统一 source_type/source_id
 - 扩展 AgentRun/AgentStep schema（plan_json/safety_level/kind/requires_user_confirm），补齐 API DTO。
 - 基线观测：记录 tool_trace、LLM 调用摘要、错误码；新增最小回归测试（agent chat happy path + tool error）。
 
