@@ -59,7 +59,7 @@
 - 接入 ContextAssembler：RAG/Graph/Timeline 三种来源按 scene 注入；工具入参自动补 tenant/user/video。
 - Self-corrector：失败/空 observation 时触发一次反思重试；为高风险步骤标记 `requires_user_confirm`。
 
-### M2.5：Memory Track（自研长上下文管理）
+### M2.5：AliceMem - 自研长上下文记忆系统
 
 > 与 M2/M3 并行推进，为 Agent 主循环提供可靠的长上下文支撑。
 
@@ -68,6 +68,17 @@
 - 安全级别过滤、Scene/tenant/source_id 粒度检索
 - Graph/Timeline/Entity 深度定制，与现有架构无缝集成
 - 成本可控、性能可调、安全可审计
+
+**AliceMem 应用场景**：
+
+| 场景 | 应用方式 | 优先级 |
+|------|---------|--------|
+| **Agent 对话** | 多轮记忆、跨会话检索、用户偏好学习 | P0 |
+| **知识管理** | Video/文档摘要、Graph 增量更新、Timeline 事件 | P1 |
+| **工具执行** | 调用历史、错误模式学习、上下文感知选择 | P1 |
+| **个性化** | 用户画像、学习进度、兴趣推荐 | P2 |
+| **跨模块复用** | RAG 增强、搜索缓存、洞察生成 | P2 |
+| **未来扩展** | 团队共享、外部系统集成 | P3 |
 
 **核心架构**：
 ```
@@ -91,10 +102,25 @@
    (Chroma 语义检索)                        (结构化知识)
 ```
 
+**数据流**：
+```
+User ↔ AgentCore ↔ ContextAssembler ──┐
+                                      │ retrieve
+                                      ▼
+                               [AliceMem]
+                              /    |    \
+                        recent  summary  vector/entity/graph
+                              \    |    /
+                               store (messages/tools/content)
+Processor/Pipeline ──store_content──────┘
+Graph/Timeline ──upsert→ AliceMem
+ToolExecutor ──log_tool_run→ AliceMem
+```
+
 **模块结构**：
 ```
 services/memory/
-├── service.py          # MemoryService: retrieve/store/summarize/forget
+├── service.py          # AliceMem Facade: retrieve/store/summarize/forget
 ├── token_manager.py    # tiktoken 预算分配
 ├── recent_buffer.py    # Layer 1: 最近窗口
 ├── summary_buffer.py   # Layer 2: 自动摘要
@@ -104,6 +130,24 @@ services/memory/
 └── models.py           # DTO/MemoryChunk
 ```
 
+**核心接口**：
+```python
+class AliceMem:
+    async def retrieve(query, tenant_id, user_id, scene, ...) -> List[MemoryChunk]
+    async def store_message(message, role, tenant_id, ...) -> None
+    async def store_content(text, tenant_id, source_type, source_id, ...) -> None
+    async def summarize_conversation(conversation_id, ...) -> str
+    async def log_tool_run(name, args, result, error, ...) -> None
+    async def forget(scope, tenant_id, identifier) -> None
+```
+
+**集成点**：
+- `alice/agent/core.py`: 构建 messages 前调用 `retrieve()`，生成后调用 `store_message()`
+- `alice/one/context.py`: 注入 memory 层结果，调用 token_manager 预算
+- `services/processor/pipeline.py`: 内容处理后调用 `store_content()`
+- `services/knowledge/graph.py`: 写入/读取 graph_timeline
+- `alice/agent/tool_executor.py`: 调用 `log_tool_run()` 记录工具执行
+
 **分阶段落地**：
 
 | Phase | 内容 | 验收标准 |
@@ -111,7 +155,7 @@ services/memory/
 | **Phase 1** (1周) | tiktoken + Token Budget Manager + Recent Window | 上下文组装遵循 token 预算，无裸字符计数 |
 | **Phase 2** (1周) | Summary Buffer + conversation_summaries 表 | 长对话自动摘要，不超预算 |
 | **Phase 3** (1-2周) | Entity Memory + Vector Memory (Chroma) | 检索结果含实体+语义片段，元数据过滤生效 |
-| **Phase 4** (1周) | Graph/Timeline 集成 | 结构化知识可写入/读出，注入对话上下文 |
+| **Phase 4** (1周) | Graph/Timeline 集成 + 工具追踪 | 结构化知识可写入/读出，注入对话上下文 |
 
 **数据库新表**（migration: `003_memory.py`）：
 - `conversation_summaries` (conversation_id, tenant_id, summary, created_at)
@@ -119,15 +163,16 @@ services/memory/
 - `entity_mentions` (tenant_id, conversation_id, message_id, entity_id)
 - `memory_traces` (tenant_id, scene, source_type, source_id, text, vector_ref, metadata JSONB)
 
-**集成点**：
-- `ContextAssembler` 调用 `MemoryService.retrieve()`
-- `AliceAgentCore` 生成后调用 `MemoryService.store()`
-- Memory trace 写入 `AgentStep.tool_trace_json`
+**配置项**：
+- `MEM_TOKEN_BUDGET_TOTAL`: 总 token 预算（默认 16000）
+- `MEM_RECENT_MAX_MESSAGES`: 最近窗口大小（默认 30）
+- `MEM_SUMMARY_TRIGGER_TOKENS`: 摘要触发阈值
+- `ENABLE_SUMMARY/VECTOR/ENTITY/GRAPH`: 各层启用开关
 
 **风险缓解**：
 - 性能：Chroma 预热、分页；缓存 token 计数；摘要频率限流
 - 成本：摘要按阈值批处理、低价模型、长度限制
-- 回滚：MemoryService 可降级为 recent-only 模式
+- 回滚：AliceMem 可降级为 recent-only 模式
 
 ### M3：人机协同与可视化（2 周）
 - API：step 确认 `/agent/runs/{run_id}/steps/{step_id}/confirm`，任务中心 `/tasks` 列表/重试/取消，记忆中心 `/memory/insights` CRUD。
