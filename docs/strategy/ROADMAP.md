@@ -263,8 +263,9 @@ class AliceMem:
 - 并行与策略：简单节点图（LangGraph 风格）支持并行工具与条件路由；Research/Timeline 策略可自适应选工具包。
 - Safety & Guardrails：敏感操作二次确认、参数审计、LLM 安全级别选择；离线回放与审计日志。
 
-### F-Track：Jarvis UI/UX 重构（并行前端轨道）
+### F-Track：Jarvis UI/UX 完全重构（并行前端轨道）
 
+> ⚠️ **完全重构**：不是迭代优化，而是从零重建前端架构和设计系统。
 > 与后端里程碑并行推进，不阻塞 M2-M4。
 
 **目标**：打造专业的 Jarvis 风格界面，对话驱动，统一入口。
@@ -290,16 +291,40 @@ class AliceMem:
 - Framer Motion 克制动效
 - Design Tokens 规范化
 
-**分阶段落地**：
-- **F1 设计基座**：调性定义、tokens、基础组件、Storybook
-- **F2 核心页面**：Chat + Library + 右侧面板 + Command 模式
-- **F3 扩展**：Overlay(Graph/Timeline)、移动端适配、动效打磨
+**分阶段落地与排期**：
 
-**设计参考**：Perplexity（对话+引用）、Readwise（信息密度）、Linear（设计系统）、Raycast（Command）
+| Phase | 内容 | 时间 | 交付物 |
+|-------|------|------|--------|
+| **F0 设计准备** | Moodboard、调性定义、Figma 骨架、Design Tokens | 1 周 | 设计规范文档 + Figma 文件 |
+| **F1 设计基座** | 基础组件库、Storybook、主题系统 | 1-2 周 | 可复用组件 + Storybook |
+| **F2 核心页面** | Chat 主页 + Library 页 + 右侧面板 + Command 模式 | 2-3 周 | 3 个核心页面可用 |
+| **F3 交互完善** | Overlay(Graph/Timeline)、洞察卡、Safety 确认流 | 1-2 周 | 完整交互流程 |
+| **F4 打磨发布** | 移动端适配、动效打磨、可用性测试、性能优化 | 1-2 周 | 生产就绪 |
+
+**总计：6-10 周**（与后端 M2-M4 并行）
+
+**设计参考**：
+- Perplexity（对话+引用并列）
+- Readwise Reader（信息密度控制）
+- Linear（设计系统一致性）
+- Raycast（Command Palette 交互）
+- ChatGPT Desktop（对话为主的布局）
+- Arc Browser（极简导航）
 
 **与后端依赖**：
 - 需稳定 API 契约：`/videos`、`/agent`、`/knowledge`
 - 新增：Agent 返回 `suggested_actions` 支持可执行建议
+- 需 M3 完成：AgentRun/Step 可视化、确认流 API
+
+**设计资源方案**（无专职设计师）：
+1. 使用 v0/Galileo AI 生成 moodboard + 组件样稿
+2. 基于 shadcn + 自定义 tokens 快速拼装高保真 wireframe
+3. 可选：外包资深 UI/UX 设计师做核心流（Library/Video/Chat）的 Figma 稿
+
+**风险与缓解**：
+- 设计资源不足：优先核心 3 页，其余复用组件
+- 后端 API 不稳定：约定 OpenAPI 契约，前端可 mock 开发
+- 工作量膨胀：严格控制 Phase 边界，MVP 优先
 
 ### M5：评测与自治（持续）
 - Eval：基于 `alice/eval` 增加多步 Agent 回归集、工具调用金标、超时与异常覆盖。
@@ -308,6 +333,45 @@ class AliceMem:
 ---
 
 ## 近期优先级（执行提示）
-- 完成 Phase 1 的安全与多租户修复后，再接线 Planner/Executor，避免循环在不安全基线上运行。
-- 所有新特性配套测试（pytest + `pytest.mark.asyncio`），外部依赖需 mock。
-- 控制平面/配置：统一从 `config/base/` 读取，LLM 通过 ControlPlane 获取，不直接实例化。
+
+### 当前状态
+- **PR #6** (feat/m1-agent-observability): Agent 可观测性扩展 + 文档更新，待合并
+- **M1 进行中**: 安全/多租户/异常处理/技术债修复
+
+### 下一步行动
+
+**立即（本周）**：
+1. ✅ 合并 PR #6 到 main
+2. 🔄 开始 M1 技术债修复：T1(异步阻塞)、T4(时间戳统一)、T3(HTTP客户端)
+3. 🔄 添加 tiktoken 依赖，为 M2.5 Phase 0 做准备
+
+**短期（1-2 周）**：
+1. 完成 M1 剩余任务：安全修复、多源迁移、异常规范化
+2. 启动 M2.5 Phase 0：技术债清理（token 预算、RAG 空实现修复）
+3. 启动 F-Track F0：设计准备（Moodboard、Design Tokens）
+
+**中期（3-4 周）**：
+1. M2：启用 Agent 主循环（TaskPlanner + ToolExecutor 接线）
+2. M2.5 Phase 1-2：AliceMem Recent Window + Summary Buffer
+3. F-Track F1-F2：设计基座 + 核心页面开发
+
+### 并行轨道
+
+```
+Week 1-2    Week 3-4    Week 5-6    Week 7-8    Week 9-10
+   │           │           │           │           │
+   ├── M1 ─────┤           │           │           │
+   │           ├── M2 ─────┤           │           │
+   ├── M2.5 P0 ┼── P1-2 ───┼── P3-4 ───┤           │
+   │           │           ├── M3 ─────┤           │
+   │           │           │           ├── M4 ─────┤
+   │           │           │           │           │
+   ├── F0 ─────┼── F1-F2 ──┼── F2 ─────┼── F3 ─────┼── F4
+   │           │           │           │           │
+```
+
+### 关键原则
+- 完成 M1 安全修复后，再接线 Planner/Executor，避免循环在不安全基线上运行
+- 所有新特性配套测试（pytest + `pytest.mark.asyncio`），外部依赖需 mock
+- 控制平面/配置：统一从 `config/base/` 读取，LLM 通过 ControlPlane 获取
+- 前端重构与后端并行，通过 API 契约解耦
