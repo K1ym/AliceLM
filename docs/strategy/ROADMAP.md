@@ -24,7 +24,12 @@
 
 ## 关键缺口
 - **Agent 主循环未启用**：Planner/Executor 未接线，LLM 没有多步 ReAct、无自我纠错/确认/回溯。
-- **上下文与记忆不足**：RAG/Graph/Timeline/Memory 未整合到循环，工具无法带上下文自适应。
+- **上下文与记忆严重不足**：
+  - RAG/Graph/Timeline 检索全是 TODO 空实现
+  - 用字符数代替 token 数（`len(content)` 而非 tiktoken）
+  - 硬编码 6 条消息 / 20k 字符限制，无动态窗口管理
+  - 无 Entity Memory、Summary Buffer、Knowledge Graph Memory
+  - 未利用 Prompt Caching（Claude/GPT-4 支持）
 - **安全/多租户**：tenant_id/user_id 注入缺失；认证旁路；工具调用缺乏安全级别与审计。
 - **异常处理缺陷**：大量裸 `except Exception` 吞异常，阻断定位与告警，可能掩盖认证/支付/外部依赖失败。
 - **多源迁移未完成**：仍以 `bvid` 为核心字段，未统一为 `source_type + source_id`，阻碍多源扩展与数据模型一致性。
@@ -53,6 +58,76 @@
 - 将 `TaskPlanner` + `ToolExecutor` 接入 `AliceAgentCore.run_task`，支持 ReAct 多步、终止工具、max_steps/超时。
 - 接入 ContextAssembler：RAG/Graph/Timeline 三种来源按 scene 注入；工具入参自动补 tenant/user/video。
 - Self-corrector：失败/空 observation 时触发一次反思重试；为高风险步骤标记 `requires_user_confirm`。
+
+### M2.5：Memory Track（自研长上下文管理）
+
+> 与 M2/M3 并行推进，为 Agent 主循环提供可靠的长上下文支撑。
+
+**为什么自研（而非 Mem0）**：
+- 精确 token 预算（tiktoken），避免用字符数代替 token 数
+- 安全级别过滤、Scene/tenant/source_id 粒度检索
+- Graph/Timeline/Entity 深度定制，与现有架构无缝集成
+- 成本可控、性能可调、安全可审计
+
+**核心架构**：
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Token Budget Manager                     │
+│         (tiktoken: system 2k + history 6k + memory 6k)       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+   [Layer 1]            [Layer 2]            [Layer 3]
+   Recent Window        Summary Buffer       Entity Memory
+   (原文 N 条)           (压缩摘要)            (KV 实体)
+         │                    │                    │
+         └────────────────────┼────────────────────┘
+                              ▼
+         ┌────────────────────┴────────────────────┐
+         ▼                                         ▼
+   [Layer 4]                               [Layer 5]
+   Vector Memory                           Graph/Timeline
+   (Chroma 语义检索)                        (结构化知识)
+```
+
+**模块结构**：
+```
+services/memory/
+├── service.py          # MemoryService: retrieve/store/summarize/forget
+├── token_manager.py    # tiktoken 预算分配
+├── recent_buffer.py    # Layer 1: 最近窗口
+├── summary_buffer.py   # Layer 2: 自动摘要
+├── entity_memory.py    # Layer 3: 实体 KV
+├── vector_memory.py    # Layer 4: Chroma 检索
+├── graph_timeline.py   # Layer 5: 结构化洞察
+└── models.py           # DTO/MemoryChunk
+```
+
+**分阶段落地**：
+
+| Phase | 内容 | 验收标准 |
+|-------|------|---------|
+| **Phase 1** (1周) | tiktoken + Token Budget Manager + Recent Window | 上下文组装遵循 token 预算，无裸字符计数 |
+| **Phase 2** (1周) | Summary Buffer + conversation_summaries 表 | 长对话自动摘要，不超预算 |
+| **Phase 3** (1-2周) | Entity Memory + Vector Memory (Chroma) | 检索结果含实体+语义片段，元数据过滤生效 |
+| **Phase 4** (1周) | Graph/Timeline 集成 | 结构化知识可写入/读出，注入对话上下文 |
+
+**数据库新表**（migration: `003_memory.py`）：
+- `conversation_summaries` (conversation_id, tenant_id, summary, created_at)
+- `entities` (tenant_id, name, type, data JSONB)
+- `entity_mentions` (tenant_id, conversation_id, message_id, entity_id)
+- `memory_traces` (tenant_id, scene, source_type, source_id, text, vector_ref, metadata JSONB)
+
+**集成点**：
+- `ContextAssembler` 调用 `MemoryService.retrieve()`
+- `AliceAgentCore` 生成后调用 `MemoryService.store()`
+- Memory trace 写入 `AgentStep.tool_trace_json`
+
+**风险缓解**：
+- 性能：Chroma 预热、分页；缓存 token 计数；摘要频率限流
+- 成本：摘要按阈值批处理、低价模型、长度限制
+- 回滚：MemoryService 可降级为 recent-only 模式
 
 ### M3：人机协同与可视化（2 周）
 - API：step 确认 `/agent/runs/{run_id}/steps/{step_id}/confirm`，任务中心 `/tasks` 列表/重试/取消，记忆中心 `/memory/insights` CRUD。
