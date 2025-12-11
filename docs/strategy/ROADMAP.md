@@ -69,6 +69,43 @@
 - Graph/Timeline/Entity 深度定制，与现有架构无缝集成
 - 成本可控、性能可调、安全可审计
 
+#### Phase 0：技术债清理（M2.5 第一阶段）
+
+> ⚠️ **AliceMem 的第一步**：清理现有上下文管理的技术债，为新系统奠定正确基础。
+
+**P0 致命问题（Week 1）**：
+
+| # | 问题 | 文件 | 修复方式 |
+|---|------|------|---------|
+| 1 | 字符计数假装 Token 计数 | `context_compressor.py:92`<br>`conversations.py:220,225,261` | 集成 tiktoken，替换所有 `len(content)` |
+| 2 | 硬编码 Magic Number | `conversations.py:33-34`<br>`context_compressor.py:16-17`<br>`context.py:82` | 移除硬编码，改为基于模型的动态配置 |
+| 3 | 核心 RAG 功能空实现 | `alice/one/context.py:172-193` | 调用现有 `alice/rag/service.py`，填充 `_retrieve_from_rag/graph/timeline` |
+
+**P1 严重问题（Week 2）**：
+
+| # | 问题 | 文件 | 修复方式 |
+|---|------|------|---------|
+| 4 | 对话历史无 Token 预算 | `conversations.py:218` | 按 token 预算加载，不再 `limit=1000` |
+| 5 | 压缩策略完全错误 | `conversations.py:225-236` | 基于 token 而非消息数，增加缓存 |
+| 6 | get_message_count N+1 | `chat_service.py:133-135` | 改用 `COUNT(*)` 查询 |
+
+**P2 重要问题（Week 3）**：
+
+| # | 问题 | 文件 | 修复方式 |
+|---|------|------|---------|
+| 7 | 没有 tiktoken 依赖 | `pyproject.toml` | 添加 `tiktoken>=0.5.0` |
+| 8 | 无 Prompt 缓存机制 | 全局 | 利用 Anthropic Prompt Caching |
+| 9 | ChromaClient chunking 用字符数 | `chroma_client.py:245` | 用 tiktoken 切分 |
+| 10 | 没有 token 使用监控 | 全局 | 添加 LLM 调用 metrics |
+
+**验收标准**：
+- [ ] `grep -r "len(content)" --include="*.py"` 返回 0 结果（token 相关场景）
+- [ ] 所有上下文阈值从配置读取，无硬编码
+- [ ] `_retrieve_from_rag()` 返回真实数据，非空列表
+- [ ] 对话列表加载时间 < 200ms（修复 N+1）
+
+---
+
 **AliceMem 应用场景**：
 
 | 场景 | 应用方式 | 优先级 |
@@ -152,7 +189,8 @@ class AliceMem:
 
 | Phase | 内容 | 验收标准 |
 |-------|------|---------|
-| **Phase 1** (1周) | tiktoken + Token Budget Manager + Recent Window | 上下文组装遵循 token 预算，无裸字符计数 |
+| **Phase 0** (1-2周) | 技术债清理：tiktoken 集成、移除硬编码、修复空实现、N+1 查询 | 见上方验收标准清单 |
+| **Phase 1** (1周) | Token Budget Manager + Recent Window | 上下文组装遵循 token 预算，无裸字符计数 |
 | **Phase 2** (1周) | Summary Buffer + conversation_summaries 表 | 长对话自动摘要，不超预算 |
 | **Phase 3** (1-2周) | Entity Memory + Vector Memory (Chroma) | 检索结果含实体+语义片段，元数据过滤生效 |
 | **Phase 4** (1周) | Graph/Timeline 集成 + 工具追踪 | 结构化知识可写入/读出，注入对话上下文 |
